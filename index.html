@@ -596,7 +596,7 @@ function renderActionBar(){
     if (lenRoll.dice.length===1) dd.appendChild(mkDie(lenRoll.dice[0], true));
     else lenRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===lenRoll.value)));
     inner.appendChild(dd);
-    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.78rem;color:var(--muted);margin:-2px 0 10px;">${lenRoll.value} rechtdoor${lenRoll.mod==="adv"?" (fairwaybonus)":lenRoll.mod==="dis"?" (strafworp)":""}</div>`));
+    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:-2px 0 2px;">Je sloeg ${lenRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">rechtdoor${lenRoll.mod==="adv"?" · fairwaybonus":lenRoll.mod==="dis"?" · strafworp":""}</div>`));
     if (forwardPenalty) inner.appendChild(penaltyBadge("in het water"));
 
     const btn = el("button","btn btn-primary","🎲 Gooi voor breedte");
@@ -608,7 +608,7 @@ function renderActionBar(){
     const dd = el("div","dice-display");
     dd.appendChild(mkDie(widRoll.value, true));
     inner.appendChild(dd);
-    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.78rem;color:var(--muted);margin:-2px 0 10px;">${widRoll.value} opzij — kies links of rechts (zie stippellijn op het bord)</div>`));
+    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:-2px 0 2px;">Je sloeg ${widRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">opzij — kies links of rechts (zie stippellijn op het bord)</div>`));
 
     const row = el("div","row");
     const leftBtn = el("button","btn btn-primary", `⬅️ ${widRoll.value} links`);
@@ -887,6 +887,14 @@ function openRulesModal(){
   render();
   if ("serviceWorker" in navigator){
     window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+    // Zodra een nieuwe versie van de service worker het overneemt, automatisch herladen
+    // zodat een update altijd direct zichtbaar is (nooit meer "oude versie door caching").
+    let reloadedForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloadedForUpdate) return;
+      reloadedForUpdate = true;
+      window.location.reload();
+    });
   }
 })();
 </script>
