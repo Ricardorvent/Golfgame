@@ -10,16 +10,20 @@ meerdere mensen op één telefoon of tablet te spelen.
 Open de app (zie "Installeren" hieronder), vul spelersnamen in, kies 9 of 18 holes en druk
 op start. Daarna om de beurt:
 
-1. **Gooi** de dobbelsteen.
-2. Lig je op de **fairway**? Dan gooi je twee dobbelstenen en telt de hoogste (bonus).
-   Lig je in het **zand** (of kom je net uit de bomen)? Dan gooi je er twee en telt de
-   laagste (strafworp). Overal elders gewoon één dobbelsteen.
-3. Kies een **richting** (8 mogelijkheden) — de bal beweegt dat aantal vakjes in een rechte
-   lijn. Je mag over water heen vliegen, maar niet erin landen (anders: +1 strafslag, bal
-   blijft op de droge rand liggen). Bomen blokkeren je pad: de bal stopt ervoor.
-4. Lig je op de **green**, dan hoef je geen richting meer te kiezen — de worp beweegt
-   automatisch richting de vlag. Vlag precies geraakt = hole uit.
-5. Na elke slag geeft het scherm aan wie er daarna aan de beurt is ("Geef door aan...").
+Druk op **Gooi**: dat werpt twee dingen tegelijk.
+
+1. Een dobbelsteen voor de **afstand** (1-6 vakjes). Lig je op de **fairway/tee**? Dan gooi
+   je er twee en telt de hoogste (bonus). Lig je in het **zand**? Dan gooi je er twee en
+   telt de laagste (strafworp). Overal elders gewoon één dobbelsteen.
+2. Een dobbelsteen voor de **richting** — een waaier van zes opties, ongeveer van 9 tot 3
+   uur (altijd naar voren, nooit recht vooruit en nooit pal opzij). Je kiest de richting
+   niet zelf: dat is puur dobbelgeluk, net als bij het fysieke spel.
+
+Een hole is **par × 6 vakjes** lang. Je mag over water heen vliegen, maar niet erin landen
+(anders: +1 strafslag, bal blijft op de droge rand liggen). Bomen blokkeren je pad: de bal
+stopt ervoor. Zodra je bal de laatste rij bereikt of passeert, is de hole uit — geen aparte
+putt nodig. Na elke slag geeft het scherm aan wie er daarna aan de beurt is ("Geef door
+aan...").
 
 Minste totaal aantal slagen na alle holes wint. Elke ronde krijgt een **baancode** (bijv.
 `A7K2QX`) — vul dezelfde code bij een nieuw spel in om exact dezelfde baan nog eens te

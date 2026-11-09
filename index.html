@@ -72,16 +72,6 @@
   .dice-display{display:flex; justify-content:center; align-items:center; gap:10px; margin:6px 0 2px; font-size:1rem; color:var(--muted); min-height:1.3rem;}
   .die{font-size:1.6rem; font-weight:800; color:var(--ink); background:var(--surface2); border-radius:8px; padding:2px 10px; position:relative;}
   .die.used::after{content:"✓"; position:absolute; top:-6px; right:-6px; background:var(--ok); color:#06321a; border-radius:50%; width:16px; height:16px; font-size:.65rem; display:flex; align-items:center; justify-content:center;}
-  .dirpad{
-    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:6px;
-    max-width:260px; margin:10px auto 4px; aspect-ratio:1/1;
-  }
-  .dirpad button{
-    background:var(--surface2); border:none; border-radius:12px; color:var(--ink); font-size:1.4rem;
-    cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation;
-  }
-  .dirpad button:active{transform:scale(.92); background:var(--accent); color:var(--accent-ink);}
-  .dirpad .center{background:transparent; font-size:1rem; color:var(--muted); font-weight:800;}
   .scorebar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
   .score-chip{display:flex; align-items:center; gap:6px; background:var(--surface2); border-radius:999px; padding:5px 10px 5px 6px; font-size:.78rem; font-weight:700;}
   .overlay{
@@ -115,16 +105,16 @@
   <h2>Hoe werkt het?</h2>
   <p>Een digitale, vrij-naspeelbare versie van het rol-en-schrijf golfspel <strong>Paper Apps™ GOLF</strong> (Gladden Design). De spelregels hieronder zijn onze eigen uitwerking — er is geen officiële digitale versie, dus pas gerust aan als je het fysieke boekje erbij hebt.</p>
   <h3>Per slag</h3>
-  <p>Je gooit een dobbelsteen (1-6) en kiest een richting (8 richtingen). De bal beweegt dat aantal vakjes in een rechte lijn.</p>
+  <p>Bij elke slag gooi je twee dingen tegelijk: een dobbelsteen voor de <strong>afstand</strong> (1-6 vakjes) en een dobbelsteen voor de <strong>richting</strong> — een waaier van zes opties, ongeveer van 9 tot 3 uur (altijd naar voren, nooit recht vooruit en nooit pal opzij). Je kiest de richting niet zelf: dat is puur dobbelgeluk, net als bij het fysieke spel.</p>
   <div class="legend">
-    <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway: bonusworp (2 dobbelstenen, hoogste telt)</div>
-    <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone worp</div>
-    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp (2 dobbelstenen, laagste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway/tee: bonus op de afstand (2 dobbelstenen, hoogste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone afstandsworp</div>
+    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp op de afstand (2 dobbelstenen, laagste telt)</div>
     <div class="li"><span class="sw" style="background:var(--water)"></span>Water: overvliegen mag, landen niet — kost 1 strafslag</div>
     <div class="li"><span class="sw" style="background:var(--trees)"></span>Bomen: blokkeren je pad, bal stopt ervoor</div>
-    <div class="li"><span class="sw" style="background:var(--green)"></span>Green: putten — bal beweegt automatisch richting de vlag</div>
+    <div class="li"><span class="sw" style="background:var(--green)"></span>Green: de laatste rij(en) voor de vlag</div>
   </div>
-  <p>Zodra je bal op de green ligt, hoef je geen richting meer te kiezen: de worp beweegt vanzelf richting de vlag. Haal je de vlag exact, dan is de hole uit.</p>
+  <p>Een hole is <strong>par × 6 vakjes</strong> lang. Zodra je bal de laatste rij bereikt of passeert, is de hole uit — geen aparte putt nodig, precies op de vlag landen hoeft niet.</p>
   <h3>Samen spelen</h3>
   <p>Iedereen speelt dezelfde baan, om de beurt, op hetzelfde toestel. Minste aantal slagen na alle holes wint. Je kunt dezelfde baan later opnieuw spelen met de baancode.</p>
 </template>
@@ -162,11 +152,12 @@ function rollD6(){ return 1 + Math.floor(Math.random()*6); }
 const PLAYER_COLORS = ["#e63946","#2a9d8f","#f4a261","#8338ec","#ffbe0b","#3a86ff","#fb8500","#06d6a0"];
 const PARS_18 = [4,3,4,5,4,3,4,5,4, 4,3,5,4,4,3,4,5,4];
 const COLS = 7;
-const LENGTH_BY_PAR = {3:7, 4:11, 5:15};
-const DIRS = [
-  {key:"NW", dr:1, dc:-1, label:"↖", area:"nw"}, {key:"N", dr:1, dc:0, label:"↑", area:"n"}, {key:"NE", dr:1, dc:1, label:"↗", area:"ne"},
-  {key:"W", dr:0, dc:-1, label:"←", area:"w"},   {key:"C", dr:0, dc:0, label:"", area:"c", center:true}, {key:"E", dr:0, dc:1, label:"→", area:"e"},
-  {key:"SW", dr:-1, dc:-1, label:"↙", area:"sw"}, {key:"S", dr:-1, dc:0, label:"↓", area:"s"}, {key:"SE", dr:-1, dc:1, label:"↘", area:"se"}
+const LENGTH_BY_PAR = {3: 3*6, 4: 4*6, 5: 5*6}; // par x 6 vakjes lengte
+// Richtingswaaier: 6 opties van ~9 tot ~3 uur (altijd naar voren, nooit pal opzij).
+// Een dobbelsteen bepaalt WELKE van de 6 — puur dobbelgeluk, geen eigen keuze.
+const ANGLE_OPTIONS = [
+  {deg:-75, clock:"9"}, {deg:-45, clock:"10"}, {deg:-15, clock:"11"},
+  {deg:15, clock:"1"}, {deg:45, clock:"2"}, {deg:75, clock:"3"}
 ];
 const TERRAIN_NAME = {T:"Tee",F:"Fairway",R:"Rough",S:"Zand",W:"Water",X:"Bomen",G:"Green"};
 
@@ -190,7 +181,7 @@ function generateHole(baseSeed, holeIndex, par){
   }
   grid[0][teeCol] = "T";
 
-  const greenRows = par===5 ? 3 : 2;
+  const greenRows = clamp(Math.round(rows*0.12), 2, 4);
   const pinRow = rows-1;
   for (let r = rows-greenRows; r<rows; r++){
     const c0 = corridor[r].center;
@@ -202,16 +193,16 @@ function generateHole(baseSeed, holeIndex, par){
   grid[pinRow][pinCol] = "G";
   const pin = {r: pinRow, c: pinCol};
 
-  if (par !== 3 || rng() < 0.4){
-    const wr = clamp(Math.floor(rows*0.38) + Math.floor(rng()*2), 2, rows-greenRows-2);
-    const span = (par===5 && rng()<0.5) ? 2 : 1;
+  if (rng() < 0.7){
+    const wr = clamp(Math.floor(rows*0.38) + Math.floor(rng()*4), 2, rows-greenRows-3);
+    const span = rng()<0.35 ? 2 : 1;
     for (let k=0; k<span; k++){
       const r = wr+k;
       if (r>0 && r < rows-greenRows-1) for (let c=0;c<COLS;c++) grid[r][c] = "W";
     }
   }
 
-  const bunkerCount = par===3 ? 1 : (par===4 ? 2 : 3);
+  const bunkerCount = clamp(Math.round(rows/7), 2, 6);
   for (let i=0; i<bunkerCount; i++){
     const r = 1 + Math.floor(rng()*(rows-2));
     const c = Math.floor(rng()*COLS);
@@ -224,7 +215,7 @@ function generateHole(baseSeed, holeIndex, par){
     }
   }
 
-  const treeClusters = par===3 ? 2 : (par===4 ? 3 : 4);
+  const treeClusters = clamp(Math.round(rows/6), 2, 7);
   for (let i=0; i<treeClusters; i++){
     const r = 1 + Math.floor(rng()*(rows-2));
     const c = Math.floor(rng()*COLS);
@@ -250,19 +241,29 @@ function rollForTerrain(t){
   const value = mod==="adv" ? Math.max(d1,d2) : Math.min(d1,d2);
   return {value, dice:[d1,d2], mod};
 }
-function computePath(start, dr, dc, roll, hole){
+// Richting = een hoek (graden t.o.v. recht vooruit, 0deg), afgeleid uit ANGLE_OPTIONS.
+// De bal loopt in een rechte lijn onder die hoek; elke stap van 1 t/m 'distance' wordt
+// afgerond naar het dichtstbijzijnde vakje (ondersteunt schuine lijnen, niet alleen de
+// 8 kompasrichtingen).
+function computePath(start, angleDeg, distance, hole){
+  const rad = angleDeg * Math.PI/180;
+  const vdr = Math.cos(rad), vdc = Math.sin(rad);
   const path = [];
-  for (let step=1; step<=roll; step++){
-    const nr = start.r + dr*step, nc = start.c + dc*step;
+  let last = {r: start.r, c: start.c};
+  for (let step=1; step<=distance; step++){
+    const nr = Math.round(start.r + vdr*step);
+    const nc = Math.round(start.c + vdc*step);
     if (nr<0 || nr>=hole.rows || nc<0 || nc>=hole.cols) break;
+    if (nr===last.r && nc===last.c) continue; // zelfde vakje door afronding, geen extra stap
     const terrain = hole.grid[nr][nc];
     if (terrain === "X") break;
     path.push({r:nr, c:nc, terrain});
+    last = {r:nr, c:nc};
   }
   return path;
 }
-function resolveShot(pos, dr, dc, roll, hole){
-  const path = computePath(pos, dr, dc, roll, hole);
+function resolveShot(pos, angleDeg, distance, hole){
+  const path = computePath(pos, angleDeg, distance, hole);
   let landing = path.length ? path[path.length-1] : {...pos, terrain: hole.grid[pos.r][pos.c]};
   let penalty = false;
   if (landing.terrain === "W"){
@@ -272,15 +273,6 @@ function resolveShot(pos, dr, dc, roll, hole){
     landing = dry || {...pos, terrain: hole.grid[pos.r][pos.c]};
   }
   return {landing, penalty, path};
-}
-function resolvePutt(pos, roll, pin){
-  let p = {...pos};
-  for (let i=0; i<roll; i++){
-    if (p.r===pin.r && p.c===pin.c) break;
-    const dr = Math.sign(pin.r - p.r), dc = Math.sign(pin.c - p.c);
-    p = {r:p.r+dr, c:p.c+dc};
-  }
-  return p;
 }
 
 /* ============================= persistence ============================= */
@@ -313,8 +305,8 @@ function newGame(players, roundLength, baseSeed){
     baseSeed, roundLength, pars, holeIndex, hole,
     players: gamePlayers,
     turn: 0,
-    phase: "pass", // pass | rolling | direction | holeSummary | roundEnd
-    pendingRoll: null,
+    phase: "pass", // pass | rolling | result | holeSummary | roundEnd
+    pendingResult: null,
     log: [],
     startOffset: 0
   };
@@ -329,7 +321,7 @@ function advanceTurn(){
   let i = G.turn;
   for (let k=0; k<n; k++){
     i = (i+1) % n;
-    if (!G.players[i].finished){ G.turn = i; G.phase = "pass"; G.pendingRoll = null; return; }
+    if (!G.players[i].finished){ G.turn = i; G.phase = "pass"; G.pendingResult = null; return; }
   }
   // everyone finished -> hole complete
   G.phase = "holeSummary";
@@ -347,65 +339,46 @@ function startHole(index){
 function doRoll(){
   const p = currentPlayer();
   const terrain = G.hole.grid[p.pos.r][p.pos.c];
-  if (terrain === "G"){
-    const roll = rollForTerrain("R"); // putting: plain single d6, no bonus/malus
-    const dest = resolvePutt(p.pos, roll.value, G.hole.pin);
-    p.pos = dest;
-    p.strokesThisHole += 1;
-    const holedOut = dest.r===G.hole.pin.r && dest.c===G.hole.pin.c;
-    if (holedOut){
-      p.finished = true;
-      p.strokes[G.holeIndex] = p.strokesThisHole;
-      p.total += p.strokesThisHole;
-      pushLog(`⛳ ${p.name} putt een ${roll.value} en holt uit in ${p.strokesThisHole} slagen!`, "holed");
-    } else {
-      pushLog(`${p.name} putt een ${roll.value}, nog niet in de hole.`, "");
-    }
-    advanceTurn();
-    saveState();
-    render();
-    return;
-  }
-  const roll = rollForTerrain(terrain);
-  G.pendingRoll = roll;
-  G.phase = "direction";
-  saveState();
-  render();
-}
+  const distRoll = rollForTerrain(terrain); // afstand: fairway-bonus / zand-strafworp
+  const dirIdx = Math.floor(Math.random()*ANGLE_OPTIONS.length); // richting: altijd puur geluk
+  const angle = ANGLE_OPTIONS[dirIdx];
 
-function doDirection(dir){
-  const p = currentPlayer();
-  const roll = G.pendingRoll;
-  const result = resolveShot(p.pos, dir.dr, dir.dc, roll.value, G.hole);
+  const result = resolveShot(p.pos, angle.deg, distRoll.value, G.hole);
   p.pos = {r: result.landing.r, c: result.landing.c};
   p.strokesThisHole += 1 + (result.penalty ? 1 : 0);
-  const fromTerrain = terrainMod(G.hole.grid[result.landing.r]?.[result.landing.c] ?? "R");
-  let msg = `${p.name} slaat een ${roll.value} ${dirWord(dir.key)}`;
-  if (roll.mod==="adv") msg += ` (fairway-bonus: ${roll.dice.join(" en ")})`;
-  if (roll.mod==="dis") msg += ` (strafworp: ${roll.dice.join(" en ")})`;
-  const holedOut = result.landing.r===G.hole.pin.r && result.landing.c===G.hole.pin.c;
+
+  let msg = `${p.name} slaat een ${distRoll.value} richting ${angle.clock} uur`;
+  if (distRoll.mod === "adv") msg += ` (fairwaybonus: ${distRoll.dice.join(" en ")})`;
+  if (distRoll.mod === "dis") msg += ` (strafworp: ${distRoll.dice.join(" en ")})`;
+
+  const holedOut = !result.penalty && p.pos.r >= G.hole.rows - 1;
+  let cls = "";
   if (result.penalty){
     msg += " → in het water! +1 strafslag.";
-    pushLog(msg, "penalty");
+    cls = "penalty";
   } else if (holedOut){
     p.finished = true;
     p.strokes[G.holeIndex] = p.strokesThisHole;
     p.total += p.strokesThisHole;
-    msg += ` → in de hole! ${p.strokesThisHole} slagen.`;
-    pushLog(msg, "holed");
+    msg += ` → over de laatste rij! ${p.strokesThisHole} slagen.`;
+    cls = "holed";
   } else {
-    const land = G.hole.grid[result.landing.r][result.landing.c];
+    const land = G.hole.grid[p.pos.r][p.pos.c];
     msg += ` → ligt nu in de ${TERRAIN_NAME[land] || land}.`;
-    pushLog(msg, "");
   }
-  G.pendingRoll = null;
-  advanceTurn();
+  pushLog(msg, cls);
+
+  G.pendingResult = { distRoll, dirIdx, angle, penalty: result.penalty, holedOut, cls };
+  G.phase = "result";
   saveState();
   render();
 }
-function dirWord(key){
-  const map = {N:"naar voren", S:"naar achteren", E:"naar rechts", W:"naar links", NE:"rechtsvoor", NW:"linksvoor", SE:"rechtsachter", SW:"linksachter"};
-  return map[key] || "";
+
+function continueAfterResult(){
+  G.pendingResult = null;
+  advanceTurn();
+  saveState();
+  render();
 }
 
 function allFinishedHole(){ return G.players.every(p=>p.finished); }
@@ -549,32 +522,33 @@ function renderGame(){
 
   wrap.appendChild(el("div","board-wrap")).appendChild(renderBoard());
 
-  if (G.phase === "direction"){
+  if (G.phase === "result"){
+    const res = G.pendingResult;
     const dd = el("div","dice-display");
-    const roll = G.pendingRoll;
-    if (roll.dice.length===1){
-      dd.appendChild(mkDie(roll.dice[0], true));
+    if (res.distRoll.dice.length===1){
+      dd.appendChild(mkDie(res.distRoll.dice[0], true));
     } else {
-      roll.dice.forEach(d => dd.appendChild(mkDie(d, d===roll.value && !(roll.mod==="adv" && roll.dice[0]===roll.dice[1] && false))));
-      const note = el("div","", roll.mod==="adv" ? "fairway-bonus: hoogste telt" : "strafworp: laagste telt");
+      res.distRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===res.distRoll.value)));
+      const note = el("div","", res.distRoll.mod==="adv" ? "fairway-bonus: hoogste telt" : "strafworp: laagste telt");
       note.style.fontSize = ".72rem"; note.style.alignSelf="center";
       dd.appendChild(note);
     }
     wrap.appendChild(dd);
+    wrap.appendChild(renderDial(res.dirIdx));
 
-    const pad = el("div","dirpad");
-    pad.style.gridTemplateAreas = `"nw n ne" "w c e" "sw s se"`;
-    DIRS.forEach(d => {
-      const btn = el("button", d.center ? "center" : "", d.center ? String(roll.value) : d.label);
-      btn.style.gridArea = d.area;
-      if (!d.center) btn.onclick = () => doDirection(d);
-      pad.appendChild(btn);
-    });
-    wrap.appendChild(pad);
-    wrap.appendChild(el("p","","Kies een richting om te slaan."));
+    const lastMsg = G.log[G.log.length-1];
+    if (lastMsg){
+      const resultLine = el("div","entry " + lastMsg.cls, lastMsg.msg);
+      resultLine.style.cssText += "background:var(--surface2);padding:10px 12px;border-radius:10px;margin:8px 0;border-left-width:4px;";
+      wrap.appendChild(resultLine);
+    }
+
+    const btn = el("button","btn btn-primary", res.holedOut ? "Volgende hole wordt klaargezet →" : "Door →");
+    btn.style.fontSize="1.05rem"; btn.style.padding="16px";
+    btn.onclick = continueAfterResult;
+    wrap.appendChild(btn);
   } else {
-    const onGreen = G.hole.grid[p.pos.r][p.pos.c] === "G";
-    const btn = el("button","btn btn-primary", onGreen ? "⛳ Putt!" : "🎲 Gooi");
+    const btn = el("button","btn btn-primary","🎲 Gooi (richting + afstand)");
     btn.style.fontSize="1.1rem"; btn.style.padding="16px";
     btn.onclick = doRoll;
     wrap.appendChild(btn);
@@ -590,6 +564,50 @@ function renderGame(){
 }
 
 function mkDie(val, used){ const d = el("div","die" + (used?" used":""), String(val)); return d; }
+
+/* ---- direction dial: shows the rolled 9-3 uur waaier, highlights the chosen angle ---- */
+function renderDial(selectedIdx){
+  const ns = "http://www.w3.org/2000/svg";
+  const w=260, h=140, cx=130, cy=132, r=106;
+  const svg = document.createElementNS(ns,"svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.style.width="100%"; svg.style.maxWidth="280px"; svg.style.display="block"; svg.style.margin="4px auto 0";
+
+  const arc = document.createElementNS(ns,"path");
+  const p1 = {x: cx + r*Math.sin(-90*Math.PI/180), y: cy - r*Math.cos(-90*Math.PI/180)};
+  const p2 = {x: cx + r*Math.sin(90*Math.PI/180), y: cy - r*Math.cos(90*Math.PI/180)};
+  arc.setAttribute("d", `M ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y}`);
+  arc.setAttribute("fill","none"); arc.setAttribute("stroke","rgba(255,255,255,.18)");
+  arc.setAttribute("stroke-width","2"); arc.setAttribute("stroke-dasharray","3 6");
+  svg.appendChild(arc);
+
+  ANGLE_OPTIONS.forEach((opt, i) => {
+    const rad = opt.deg*Math.PI/180;
+    const x = cx + r*Math.sin(rad), y = cy - r*Math.cos(rad);
+    const active = i===selectedIdx;
+    const line = document.createElementNS(ns,"line");
+    line.setAttribute("x1",cx); line.setAttribute("y1",cy); line.setAttribute("x2",x); line.setAttribute("y2",y);
+    line.setAttribute("stroke", active ? "#ffb703" : "rgba(255,255,255,.22)");
+    line.setAttribute("stroke-width", active ? "4" : "2");
+    svg.appendChild(line);
+    const dot = document.createElementNS(ns,"circle");
+    dot.setAttribute("cx",x); dot.setAttribute("cy",y); dot.setAttribute("r", active?9:5);
+    dot.setAttribute("fill", active ? "#ffb703" : "rgba(255,255,255,.35)");
+    svg.appendChild(dot);
+    const lbl = document.createElementNS(ns,"text");
+    lbl.setAttribute("x",x); lbl.setAttribute("y", y - (active?16:11));
+    lbl.setAttribute("text-anchor","middle"); lbl.setAttribute("font-size", active? "13":"10");
+    lbl.setAttribute("font-weight", active?"800":"600");
+    lbl.setAttribute("fill", active ? "#ffb703" : "rgba(244,251,243,.55)");
+    lbl.textContent = opt.clock + "u";
+    svg.appendChild(lbl);
+  });
+
+  const tee = document.createElementNS(ns,"circle");
+  tee.setAttribute("cx",cx); tee.setAttribute("cy",cy); tee.setAttribute("r",6); tee.setAttribute("fill","#f4fbf3");
+  svg.appendChild(tee);
+  return svg;
+}
 
 function renderPassOverlay(p){
   const ov = el("div","overlay");
