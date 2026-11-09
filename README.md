@@ -10,20 +10,21 @@ meerdere mensen op één telefoon of tablet te spelen.
 Open de app (zie "Installeren" hieronder), vul spelersnamen in, kies 9 of 18 holes en druk
 op start. Daarna om de beurt:
 
-Druk op **Gooi**: dat werpt twee dingen tegelijk.
+Druk op **Gooi**: dat werpt twee dobbelstenen tegelijk, net als bij Yahtzee — de
+dobbelstenen bepalen de cijfers, jij bepaalt wat je ermee doet.
 
-1. Een dobbelsteen voor de **afstand** (1-6 vakjes). Lig je op de **fairway/tee**? Dan gooi
-   je er twee en telt de hoogste (bonus). Lig je in het **zand**? Dan gooi je er twee en
-   telt de laagste (strafworp). Overal elders gewoon één dobbelsteen.
-2. Een dobbelsteen voor de **richting** — een waaier van zes opties, ongeveer van 9 tot 3
-   uur (altijd naar voren, nooit recht vooruit en nooit pal opzij). Je kiest de richting
-   niet zelf: dat is puur dobbelgeluk, net als bij het fysieke spel.
+1. Eén dobbelsteen voor de **lengte** (vakjes recht vooruit). Lig je op de **fairway/tee**?
+   Dan gooi je er twee en telt de hoogste (bonus). Lig je in het **zand**? Dan gooi je er
+   twee en telt de laagste (strafworp). Overal elders gewoon één dobbelsteen.
+2. Eén dobbelsteen voor de **breedte** (vakjes opzij) — en die kies jij zelf links of
+   rechts. Gooi je een 2, dan bepaal jij of die 2 vakjes naar links of naar rechts gaan.
 
 Een hole is **par × 6 vakjes** lang. Je mag over water heen vliegen, maar niet erin landen
 (anders: +1 strafslag, bal blijft op de droge rand liggen). Bomen blokkeren je pad: de bal
 stopt ervoor. Zodra je bal de laatste rij bereikt of passeert, is de hole uit — geen aparte
-putt nodig. Na elke slag geeft het scherm aan wie er daarna aan de beurt is ("Geef door
-aan...").
+putt nodig. De dobbelsteen-knoppen blijven altijd onderin beeld, ook als je omhoog scrolt
+op een lange baan. Na elke slag geeft het scherm aan wie er daarna aan de beurt is ("Geef
+door aan...").
 
 Minste totaal aantal slagen na alle holes wint. Elke ronde krijgt een **baancode** (bijv.
 `A7K2QX`) — vul dezelfde code bij een nieuw spel in om exact dezelfde baan nog eens te

@@ -73,6 +73,12 @@
   .die{font-size:1.6rem; font-weight:800; color:var(--ink); background:var(--surface2); border-radius:8px; padding:2px 10px; position:relative;}
   .die.used::after{content:"✓"; position:absolute; top:-6px; right:-6px; background:var(--ok); color:#06321a; border-radius:50%; width:16px; height:16px; font-size:.65rem; display:flex; align-items:center; justify-content:center;}
   .scorebar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+  .action-bar-fixed{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:center; pointer-events:none;}
+  .action-bar-inner{
+    pointer-events:auto; width:100%; max-width:560px; background:var(--surface);
+    border-radius:18px 18px 0 0; padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 24px rgba(0,0,0,.35); border-top:1px solid rgba(255,255,255,.08);
+  }
   .score-chip{display:flex; align-items:center; gap:6px; background:var(--surface2); border-radius:999px; padding:5px 10px 5px 6px; font-size:.78rem; font-weight:700;}
   .overlay{
     position:fixed; inset:0; background:rgba(5,25,13,.92); backdrop-filter:blur(3px); z-index:40;
@@ -105,11 +111,11 @@
   <h2>Hoe werkt het?</h2>
   <p>Een digitale, vrij-naspeelbare versie van het rol-en-schrijf golfspel <strong>Paper Apps™ GOLF</strong> (Gladden Design). De spelregels hieronder zijn onze eigen uitwerking — er is geen officiële digitale versie, dus pas gerust aan als je het fysieke boekje erbij hebt.</p>
   <h3>Per slag</h3>
-  <p>Bij elke slag gooi je twee dingen tegelijk: een dobbelsteen voor de <strong>afstand</strong> (1-6 vakjes) en een dobbelsteen voor de <strong>richting</strong> — een waaier van zes opties, ongeveer van 9 tot 3 uur (altijd naar voren, nooit recht vooruit en nooit pal opzij). Je kiest de richting niet zelf: dat is puur dobbelgeluk, net als bij het fysieke spel.</p>
+  <p>Je gooit twee dobbelstenen tegelijk: één voor de <strong>lengte</strong> (vakjes recht vooruit) en één voor de <strong>breedte</strong> (vakjes opzij). De lengte ligt vast, maar bij de breedte kies jij zelf — gooi je bijvoorbeeld een 2, dan bepaal je zelf of die 2 vakjes naar links of naar rechts gaan. Net als bij Yahtzee: de dobbelstenen bepalen de cijfers, jij bepaalt wat je ermee doet.</p>
   <div class="legend">
-    <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway/tee: bonus op de afstand (2 dobbelstenen, hoogste telt)</div>
-    <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone afstandsworp</div>
-    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp op de afstand (2 dobbelstenen, laagste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway/tee: bonus op de lengte (2 dobbelstenen, hoogste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone lengteworp</div>
+    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp op de lengte (2 dobbelstenen, laagste telt)</div>
     <div class="li"><span class="sw" style="background:var(--water)"></span>Water: overvliegen mag, landen niet — kost 1 strafslag</div>
     <div class="li"><span class="sw" style="background:var(--trees)"></span>Bomen: blokkeren je pad, bal stopt ervoor</div>
     <div class="li"><span class="sw" style="background:var(--green)"></span>Green: de laatste rij(en) voor de vlag</div>
@@ -153,12 +159,6 @@ const PLAYER_COLORS = ["#e63946","#2a9d8f","#f4a261","#8338ec","#ffbe0b","#3a86f
 const PARS_18 = [4,3,4,5,4,3,4,5,4, 4,3,5,4,4,3,4,5,4];
 const COLS = 7;
 const LENGTH_BY_PAR = {3: 3*6, 4: 4*6, 5: 5*6}; // par x 6 vakjes lengte
-// Richtingswaaier: 6 opties van ~9 tot ~3 uur (altijd naar voren, nooit pal opzij).
-// Een dobbelsteen bepaalt WELKE van de 6 — puur dobbelgeluk, geen eigen keuze.
-const ANGLE_OPTIONS = [
-  {deg:-60, clock:"9"}, {deg:-35, clock:"10"}, {deg:-12, clock:"11"},
-  {deg:12, clock:"1"}, {deg:35, clock:"2"}, {deg:60, clock:"3"}
-];
 const TERRAIN_NAME = {T:"Tee",F:"Fairway",R:"Rough",S:"Zand",W:"Water",X:"Bomen",G:"Green"};
 
 /* ============================= hole generation ============================= */
@@ -242,16 +242,17 @@ function rollForTerrain(t){
   const value = mod==="adv" ? Math.max(d1,d2) : Math.min(d1,d2);
   return {value, dice:[d1,d2], mod};
 }
-// Richting = een hoek (graden t.o.v. recht vooruit, 0deg), afgeleid uit ANGLE_OPTIONS.
-// De bal loopt in een rechte lijn onder die hoek; elke stap van 1 t/m 'distance' wordt
-// afgerond naar het dichtstbijzijnde vakje (ondersteunt schuine lijnen, niet alleen de
-// 8 kompasrichtingen).
-function computePath(start, angleDeg, distance, hole){
-  const rad = angleDeg * Math.PI/180;
-  const vdr = Math.cos(rad), vdc = Math.sin(rad);
+// Yahtzee-stijl: lengte-dobbelsteen = vakjes vooruit, breedte-dobbelsteen = vakjes opzij.
+// De speler kiest zelf links of rechts voor de breedte. De bal loopt in een rechte lijn
+// naar (start.r + totalDr, start.c + totalDc); elke tussenstap wordt afgerond naar het
+// dichtstbijzijnde vakje zodat schuine lijnen ook via bomen/water correct worden afgehandeld.
+function computePath(start, totalDr, totalDc, hole){
+  const steps = Math.max(Math.abs(totalDr), Math.abs(totalDc));
+  if (steps === 0) return [];
+  const vdr = totalDr/steps, vdc = totalDc/steps;
   const path = [];
   let last = {r: start.r, c: start.c};
-  for (let step=1; step<=distance; step++){
+  for (let step=1; step<=steps; step++){
     const nr = Math.round(start.r + vdr*step);
     const nc = Math.round(start.c + vdc*step);
     if (nr<0 || nr>=hole.rows || nc<0 || nc>=hole.cols) break;
@@ -263,8 +264,8 @@ function computePath(start, angleDeg, distance, hole){
   }
   return path;
 }
-function resolveShot(pos, angleDeg, distance, hole){
-  const path = computePath(pos, angleDeg, distance, hole);
+function resolveShot(pos, totalDr, totalDc, hole){
+  const path = computePath(pos, totalDr, totalDc, hole);
   let landing = path.length ? path[path.length-1] : {...pos, terrain: hole.grid[pos.r][pos.c]};
   let penalty = false;
   if (landing.terrain === "W"){
@@ -310,6 +311,7 @@ function newGame(players, roundLength, baseSeed){
     // pass | rolling | result | holeSummary | roundEnd
     // Bij 1 speler is er niemand om aan "door te geven" — start meteen bij rolling.
     phase: gamePlayers.length>1 ? "pass" : "rolling",
+    pendingRoll: null,
     pendingResult: null,
     log: [],
     startOffset: 0
@@ -330,6 +332,7 @@ function advanceTurn(){
       // Solo: geen "geef door"-overlay nodig, meteen weer kunnen gooien.
       G.phase = n>1 ? "pass" : "rolling";
       G.pendingResult = null;
+      G.pendingRoll = null;
       return;
     }
   }
@@ -349,17 +352,29 @@ function startHole(index){
 function doRoll(){
   const p = currentPlayer();
   const terrain = G.hole.grid[p.pos.r][p.pos.c];
-  const distRoll = rollForTerrain(terrain); // afstand: fairway-bonus / zand-strafworp
-  const dirIdx = Math.floor(Math.random()*ANGLE_OPTIONS.length); // richting: altijd puur geluk
-  const angle = ANGLE_OPTIONS[dirIdx];
+  const lenRoll = rollForTerrain(terrain); // lengte vooruit: fairway-bonus / zand-strafworp
+  const widRoll = {value: rollD6(), dice:[], mod:"normal"}; // breedte opzij: altijd gewoon 1 dobbelsteen
+  widRoll.dice = [widRoll.value];
 
-  const result = resolveShot(p.pos, angle.deg, distRoll.value, G.hole);
+  G.pendingRoll = { lenRoll, widRoll };
+  G.phase = "choose";
+  saveState();
+  render();
+}
+
+function chooseSide(dir){ // dir: -1 = links, +1 = rechts
+  const p = currentPlayer();
+  const { lenRoll, widRoll } = G.pendingRoll;
+  const totalDr = lenRoll.value, totalDc = dir * widRoll.value;
+
+  const result = resolveShot(p.pos, totalDr, totalDc, G.hole);
   p.pos = {r: result.landing.r, c: result.landing.c};
   p.strokesThisHole += 1 + (result.penalty ? 1 : 0);
 
-  let msg = `${p.name} slaat een ${distRoll.value} richting ${angle.clock} uur`;
-  if (distRoll.mod === "adv") msg += ` (fairwaybonus: ${distRoll.dice.join(" en ")})`;
-  if (distRoll.mod === "dis") msg += ` (strafworp: ${distRoll.dice.join(" en ")})`;
+  const sideWord = dir<0 ? "links" : "rechts";
+  let msg = `${p.name} slaat ${lenRoll.value} vooruit en ${widRoll.value} ${sideWord}`;
+  if (lenRoll.mod === "adv") msg += ` (fairwaybonus: ${lenRoll.dice.join(" en ")})`;
+  if (lenRoll.mod === "dis") msg += ` (strafworp: ${lenRoll.dice.join(" en ")})`;
 
   const holedOut = !result.penalty && p.pos.r >= G.hole.rows - 1;
   let cls = "";
@@ -378,7 +393,8 @@ function doRoll(){
   }
   pushLog(msg, cls);
 
-  G.pendingResult = { distRoll, dirIdx, angle, penalty: result.penalty, holedOut, cls };
+  G.pendingResult = { lenRoll, widRoll, dir, penalty: result.penalty, holedOut, cls };
+  G.pendingRoll = null;
   G.phase = "result";
   saveState();
   render();
@@ -555,41 +571,15 @@ function renderGame(){
 
   wrap.appendChild(el("div","board-wrap")).appendChild(renderBoard());
 
-  if (G.phase === "result"){
-    const res = G.pendingResult;
-    const dd = el("div","dice-display");
-    if (res.distRoll.dice.length===1){
-      dd.appendChild(mkDie(res.distRoll.dice[0], true));
-    } else {
-      res.distRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===res.distRoll.value)));
-      const note = el("div","", res.distRoll.mod==="adv" ? "fairway-bonus: hoogste telt" : "strafworp: laagste telt");
-      note.style.fontSize = ".72rem"; note.style.alignSelf="center";
-      dd.appendChild(note);
-    }
-    wrap.appendChild(dd);
-    wrap.appendChild(renderDial(res.dirIdx));
-
-    const lastMsg = G.log[G.log.length-1];
-    if (lastMsg){
-      const resultLine = el("div","entry " + lastMsg.cls, lastMsg.msg);
-      resultLine.style.cssText += "background:var(--surface2);padding:10px 12px;border-radius:10px;margin:8px 0;border-left-width:4px;";
-      wrap.appendChild(resultLine);
-    }
-
-    const btn = el("button","btn btn-primary", res.holedOut ? "Volgende hole wordt klaargezet →" : "Door →");
-    btn.style.fontSize="1.05rem"; btn.style.padding="16px";
-    btn.onclick = continueAfterResult;
-    wrap.appendChild(btn);
-  } else {
-    const btn = el("button","btn btn-primary","🎲 Gooi (richting + afstand)");
-    btn.style.fontSize="1.1rem"; btn.style.padding="16px";
-    btn.onclick = doRoll;
-    wrap.appendChild(btn);
-  }
-
   const log = el("div","log");
   G.log.slice(-8).forEach(l => { const e = el("div","entry " + l.cls, l.msg); log.appendChild(e); });
   wrap.appendChild(el("div","card").appendChild(log).parentNode);
+
+  // spacer zodat de vaste onderbalk nooit de laatste logregel bedekt
+  const spacer = el("div"); spacer.style.height = "240px";
+  wrap.appendChild(spacer);
+
+  wrap.appendChild(renderActionBar());
 
   if (G.phase === "pass") wrap.appendChild(renderPassOverlay(p));
 
@@ -597,49 +587,64 @@ function renderGame(){
 }
 
 function mkDie(val, used){ const d = el("div","die" + (used?" used":""), String(val)); return d; }
+function dieDivider(){ const d = el("div"); d.style.cssText="width:1px;align-self:stretch;background:rgba(255,255,255,.15);"; return d; }
 
-/* ---- direction dial: shows the rolled 9-3 uur waaier, highlights the chosen angle ---- */
-function renderDial(selectedIdx){
-  const ns = "http://www.w3.org/2000/svg";
-  const w=260, h=140, cx=130, cy=132, r=106;
-  const svg = document.createElementNS(ns,"svg");
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  svg.style.width="100%"; svg.style.maxWidth="280px"; svg.style.display="block"; svg.style.margin="4px auto 0";
+/* ---- vaste onderbalk: gooi-knop / lengte+breedte dobbelstenen + links/rechts / resultaat ---- */
+function renderActionBar(){
+  const outer = el("div","action-bar-fixed");
+  const inner = el("div","action-bar-inner");
 
-  const arc = document.createElementNS(ns,"path");
-  const p1 = {x: cx + r*Math.sin(-90*Math.PI/180), y: cy - r*Math.cos(-90*Math.PI/180)};
-  const p2 = {x: cx + r*Math.sin(90*Math.PI/180), y: cy - r*Math.cos(90*Math.PI/180)};
-  arc.setAttribute("d", `M ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y}`);
-  arc.setAttribute("fill","none"); arc.setAttribute("stroke","rgba(255,255,255,.18)");
-  arc.setAttribute("stroke-width","2"); arc.setAttribute("stroke-dasharray","3 6");
-  svg.appendChild(arc);
+  if (G.phase === "choose"){
+    const { lenRoll, widRoll } = G.pendingRoll;
+    const dd = el("div","dice-display");
+    if (lenRoll.dice.length===1) dd.appendChild(mkDie(lenRoll.dice[0], true));
+    else lenRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===lenRoll.value)));
+    dd.appendChild(dieDivider());
+    dd.appendChild(mkDie(widRoll.value, true));
+    inner.appendChild(dd);
 
-  ANGLE_OPTIONS.forEach((opt, i) => {
-    const rad = opt.deg*Math.PI/180;
-    const x = cx + r*Math.sin(rad), y = cy - r*Math.cos(rad);
-    const active = i===selectedIdx;
-    const line = document.createElementNS(ns,"line");
-    line.setAttribute("x1",cx); line.setAttribute("y1",cy); line.setAttribute("x2",x); line.setAttribute("y2",y);
-    line.setAttribute("stroke", active ? "#ffb703" : "rgba(255,255,255,.22)");
-    line.setAttribute("stroke-width", active ? "4" : "2");
-    svg.appendChild(line);
-    const dot = document.createElementNS(ns,"circle");
-    dot.setAttribute("cx",x); dot.setAttribute("cy",y); dot.setAttribute("r", active?9:5);
-    dot.setAttribute("fill", active ? "#ffb703" : "rgba(255,255,255,.35)");
-    svg.appendChild(dot);
-    const lbl = document.createElementNS(ns,"text");
-    lbl.setAttribute("x",x); lbl.setAttribute("y", y - (active?16:11));
-    lbl.setAttribute("text-anchor","middle"); lbl.setAttribute("font-size", active? "13":"10");
-    lbl.setAttribute("font-weight", active?"800":"600");
-    lbl.setAttribute("fill", active ? "#ffb703" : "rgba(244,251,243,.55)");
-    lbl.textContent = opt.clock + "u";
-    svg.appendChild(lbl);
-  });
+    const labelRow = el("div","");
+    labelRow.style.cssText = "display:flex;justify-content:space-around;font-size:.72rem;color:var(--muted);margin:-2px 0 10px;";
+    labelRow.appendChild(el("div","", lenRoll.mod==="adv" ? "lengte (fairwaybonus)" : (lenRoll.mod==="dis" ? "lengte (strafworp)" : "lengte vooruit")));
+    labelRow.appendChild(el("div","", "breedte opzij — kies zelf!"));
+    inner.appendChild(labelRow);
 
-  const tee = document.createElementNS(ns,"circle");
-  tee.setAttribute("cx",cx); tee.setAttribute("cy",cy); tee.setAttribute("r",6); tee.setAttribute("fill","#f4fbf3");
-  svg.appendChild(tee);
-  return svg;
+    const row = el("div","row");
+    const leftBtn = el("button","btn btn-primary", `⬅️ ${widRoll.value} links`);
+    leftBtn.onclick = () => chooseSide(-1);
+    const rightBtn = el("button","btn btn-primary", `${widRoll.value} rechts ➡️`);
+    rightBtn.onclick = () => chooseSide(1);
+    row.appendChild(leftBtn); row.appendChild(rightBtn);
+    inner.appendChild(row);
+  } else if (G.phase === "result"){
+    const res = G.pendingResult;
+    const dd = el("div","dice-display");
+    if (res.lenRoll.dice.length===1) dd.appendChild(mkDie(res.lenRoll.dice[0], true));
+    else res.lenRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===res.lenRoll.value)));
+    dd.appendChild(dieDivider());
+    dd.appendChild(mkDie(res.widRoll.value, true));
+    inner.appendChild(dd);
+
+    const lastMsg = G.log[G.log.length-1];
+    if (lastMsg){
+      const resultLine = el("div","entry " + lastMsg.cls, lastMsg.msg);
+      resultLine.style.cssText += "background:var(--surface2);padding:10px 12px;border-radius:10px;margin:6px 0 10px;border-left-width:4px;";
+      inner.appendChild(resultLine);
+    }
+
+    const btn = el("button","btn btn-primary", res.holedOut ? "Volgende hole wordt klaargezet →" : "Door →");
+    btn.style.fontSize="1.05rem"; btn.style.padding="16px";
+    btn.onclick = continueAfterResult;
+    inner.appendChild(btn);
+  } else {
+    const btn = el("button","btn btn-primary","🎲 Gooi (lengte + breedte)");
+    btn.style.fontSize="1.1rem"; btn.style.padding="16px";
+    btn.onclick = doRoll;
+    inner.appendChild(btn);
+  }
+
+  outer.appendChild(inner);
+  return outer;
 }
 
 function renderPassOverlay(p){
