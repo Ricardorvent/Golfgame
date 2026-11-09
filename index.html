@@ -103,6 +103,10 @@
   .stepper .val{font-weight:800; font-size:1.1rem; min-width:70px; text-align:center;}
   .seed-badge{display:inline-block; background:var(--surface2); border-radius:8px; padding:3px 8px; font-family:monospace; letter-spacing:1px; font-size:.85rem;}
 </style>
+
+<!-- Voor "online spelen op afstand" (Supabase Realtime). Laadt alleen met internet; de
+     lokale pass-and-play modus werkt hier niet van af en blijft offline werken. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div class="wrap" id="app"></div>
@@ -297,6 +301,111 @@ function saveState(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(G)); }c
 function loadState(){ try{ const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
 function clearState(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 
+/* ============================= online spelen (Supabase) ============================= */
+const SUPABASE_URL = "https://vsytrdgvsxmjvrlsqhse.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Uy08fmlm8ZBAFmp6XgncJA_LSFGfLkd";
+const ONLINE_SESSION_KEY = "papiergolf_online_session";
+
+let onlineMode = false;
+let onlineCode = null;
+let myPlayerIndex = null;
+let realtimeChannel = null;
+let supaClient = null;
+
+function getSupa(){
+  if (!window.supabase) return null; // geen internet (nog) gehad, of CDN niet bereikbaar
+  if (!supaClient) supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  return supaClient;
+}
+function saveOnlineSession(){ try{ localStorage.setItem(ONLINE_SESSION_KEY, JSON.stringify({code: onlineCode, myPlayerIndex})); }catch(e){} }
+function loadOnlineSession(){ try{ const raw = localStorage.getItem(ONLINE_SESSION_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
+function clearOnlineSession(){ try{ localStorage.removeItem(ONLINE_SESSION_KEY); }catch(e){} }
+
+async function pushOnlineState(){
+  const supa = getSupa();
+  if (!supa || !onlineCode) return;
+  try{ await supa.from("golf_games").update({ state: G, updated_at: new Date().toISOString() }).eq("code", onlineCode); }
+  catch(e){ /* best effort - de volgende zet probeert het gewoon opnieuw */ }
+}
+function persist(){ if (onlineMode) pushOnlineState(); else saveState(); }
+
+function subscribeOnline(code){
+  const supa = getSupa();
+  if (!supa) return;
+  if (realtimeChannel){ supa.removeChannel(realtimeChannel); realtimeChannel = null; }
+  realtimeChannel = supa
+    .channel("golf_games_" + code)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "golf_games", filter: "code=eq." + code }, (payload) => {
+      G = payload.new.state;
+      render();
+    })
+    .subscribe();
+}
+function leaveOnline(){
+  const supa = getSupa();
+  if (supa && realtimeChannel) supa.removeChannel(realtimeChannel);
+  realtimeChannel = null;
+  onlineMode = false; onlineCode = null; myPlayerIndex = null;
+  clearOnlineSession();
+}
+
+async function createOnlineGame(name, roundLength){
+  const supa = getSupa();
+  if (!supa){ onlineError = "Geen verbinding. Probeer het later nog eens."; render(); return; }
+  const code = randomSeed();
+  const lobby = { online:true, code, phase:"lobby", roundLength, players:[{name: (name||"").trim() || "Speler 1", color: PLAYER_COLORS[0]}] };
+  const { error } = await supa.from("golf_games").insert({ code, state: lobby });
+  if (error){ onlineError = "Kon geen spel aanmaken: " + error.message; render(); return; }
+  onlineMode = true; onlineCode = code; myPlayerIndex = 0;
+  saveOnlineSession();
+  subscribeOnline(code);
+  G = lobby;
+  render();
+}
+
+async function joinOnlineGame(codeRaw, name){
+  const supa = getSupa();
+  if (!supa){ onlineError = "Geen verbinding. Probeer het later nog eens."; render(); return; }
+  const code = (codeRaw||"").trim().toUpperCase();
+  if (!code){ onlineError = "Vul een spelcode in."; render(); return; }
+  const { data, error } = await supa.from("golf_games").select("state").eq("code", code).maybeSingle();
+  if (error || !data){ onlineError = "Geen spel gevonden met code " + code + "."; render(); return; }
+  const state = data.state;
+  if (state.phase !== "lobby"){ onlineError = "Dit spel is al gestart."; render(); return; }
+  if (state.players.length >= 8){ onlineError = "Dit spel zit al vol (max. 8 spelers)."; render(); return; }
+  const idx = state.players.length;
+  state.players.push({ name: (name||"").trim() || ("Speler " + (idx+1)), color: PLAYER_COLORS[idx % PLAYER_COLORS.length] });
+  const { error: upErr } = await supa.from("golf_games").update({ state, updated_at: new Date().toISOString() }).eq("code", code);
+  if (upErr){ onlineError = "Kon niet meedoen: " + upErr.message; render(); return; }
+  onlineMode = true; onlineCode = code; myPlayerIndex = idx;
+  saveOnlineSession();
+  subscribeOnline(code);
+  G = state;
+  render();
+}
+
+async function reconnectOnline(){
+  const session = loadOnlineSession();
+  if (!session) return false;
+  const supa = getSupa();
+  if (!supa) return false;
+  const { data, error } = await supa.from("golf_games").select("state").eq("code", session.code).maybeSingle();
+  if (error || !data){ clearOnlineSession(); return false; }
+  onlineMode = true; onlineCode = session.code; myPlayerIndex = session.myPlayerIndex;
+  G = data.state;
+  subscribeOnline(session.code);
+  return true;
+}
+
+function startOnlineRound(){ // alleen de host (speler 0) ziet deze knop
+  const seed = randomSeed();
+  const full = newGame(G.players, G.roundLength, seed, true);
+  full.code = G.code;
+  G = full;
+  persist();
+  render();
+}
+
 /* ============================= game state ============================= */
 let G = null; // active game, or null = on start screen
 let setupPlayers = [{name:"", color: PLAYER_COLORS[0]}, {name:"", color: PLAYER_COLORS[1]}];
@@ -304,7 +413,16 @@ let setupMode = "multi"; // "solo" | "multi"
 let setupLength = 9;
 let scoreboardOpen = false;
 
-function newGame(players, roundLength, baseSeed){
+let startTab = "local"; // "local" | "online"
+let onlineUiScreen = "menu"; // "menu" | "create" | "join"
+let onlineCreateName = "";
+let onlineCreateLength = 9;
+let onlineJoinName = "";
+let onlineJoinCode = "";
+let onlineError = "";
+let onlineBusy = false;
+
+function newGame(players, roundLength, baseSeed, online){
   const pars = PARS_18.slice(0, roundLength);
   const holeIndex = 0;
   const hole = generateHole(baseSeed, holeIndex, pars[holeIndex]);
@@ -318,12 +436,14 @@ function newGame(players, roundLength, baseSeed){
     total: 0
   }));
   return {
+    online: !!online,
     baseSeed, roundLength, pars, holeIndex, hole,
     players: gamePlayers,
     turn: 0,
     // pass | rolling (gooi lengte) | rolling-width (gooi breedte) | choose-side | result | holeSummary | roundEnd
-    // Bij 1 speler is er niemand om aan "door te geven" — start meteen bij rolling.
-    phase: gamePlayers.length>1 ? "pass" : "rolling",
+    // Bij 1 speler, of online (ieder zijn eigen toestel), is er niemand om fysiek aan "door
+    // te geven" - start meteen bij rolling.
+    phase: (gamePlayers.length>1 && !online) ? "pass" : "rolling",
     pendingRoll: null,
     pendingResult: null,
     startOffset: 0
@@ -339,8 +459,8 @@ function advanceTurn(){
     i = (i+1) % n;
     if (!G.players[i].finished){
       G.turn = i;
-      // Solo: geen "geef door"-overlay nodig, meteen weer kunnen gooien.
-      G.phase = n>1 ? "pass" : "rolling";
+      // Solo of online: geen "geef door"-overlay nodig.
+      G.phase = (n>1 && !G.online) ? "pass" : "rolling";
       G.pendingResult = null;
       G.pendingRoll = null;
       return;
@@ -375,7 +495,7 @@ function doRollForward(){
   }
   G.pendingRoll = { lenRoll, forwardPenalty: result.penalty, forwardHazard: result.hazard };
   G.phase = "rolling-width";
-  saveState();
+  persist();
   render();
 }
 
@@ -385,7 +505,7 @@ function doRollWidth(){
   const value = 1 + Math.floor(Math.random()*3); // breedte: altijd 1-3, puur dobbelgeluk
   G.pendingRoll.widRoll = {value, dice:[value]};
   G.phase = "choose-side";
-  saveState();
+  persist();
   render();
 }
 
@@ -410,23 +530,23 @@ function finishShot(res){
   G.pendingResult = res;
   G.pendingRoll = null;
   G.phase = "result";
-  saveState();
+  persist();
   render();
 }
 
 function continueAfterResult(){
   G.pendingResult = null;
   advanceTurn();
-  saveState();
+  persist();
   render();
 }
 
 function allFinishedHole(){ return G.players.every(p=>p.finished); }
 
 function goNextHole(){
-  if (G.holeIndex + 1 >= G.roundLength){ G.phase = "roundEnd"; saveState(); render(); return; }
+  if (G.holeIndex + 1 >= G.roundLength){ G.phase = "roundEnd"; persist(); render(); return; }
   startHole(G.holeIndex + 1);
-  saveState();
+  persist();
   render();
 }
 
@@ -452,6 +572,24 @@ function colorAvatar(color, letter){
 function renderStart(){
   const wrap = el("div");
   wrap.appendChild(el("h1", "", "⛳ Papiergolf"));
+
+  const tabRow = el("div","row");
+  const localTabBtn = el("button","btn " + (startTab==="local"?"btn-primary":"btn-ghost"), "📱 Op dit toestel");
+  localTabBtn.onclick = () => { startTab="local"; onlineError=""; render(); };
+  const onlineTabBtn = el("button","btn " + (startTab==="online"?"btn-primary":"btn-ghost"), "🌐 Online, op afstand");
+  onlineTabBtn.onclick = () => { startTab="online"; onlineError=""; render(); };
+  tabRow.appendChild(localTabBtn); tabRow.appendChild(onlineTabBtn);
+  tabRow.style.marginBottom = "12px";
+  wrap.appendChild(tabRow);
+
+  if (startTab === "online"){
+    wrap.appendChild(renderOnlineSetup());
+    const rulesBtn = el("button","btn btn-ghost","Hoe werkt het?");
+    rulesBtn.style.marginTop="10px";
+    rulesBtn.onclick = () => openRulesModal();
+    wrap.appendChild(rulesBtn);
+    return wrap;
+  }
 
   const modeCard = el("div","card");
   modeCard.appendChild(el("h3","","1. Hoeveel spelers?"));
@@ -534,9 +672,139 @@ function renderStart(){
   return wrap;
 }
 
+/* ---- online setup (vanaf startscherm) ---- */
+function renderOnlineSetup(){
+  const wrap = el("div");
+
+  if (onlineError){
+    const err = el("div","card", onlineError);
+    err.style.cssText += "border:1px solid var(--danger); color:#ffb3ad;";
+    wrap.appendChild(err);
+  }
+
+  if (onlineUiScreen === "create"){
+    const card = el("div","card");
+    card.appendChild(el("h3","","Nieuw online spel"));
+    card.appendChild(el("label","","Jouw naam"));
+    const nameInp = el("input"); nameInp.type="text"; nameInp.value=onlineCreateName; nameInp.maxLength=18; nameInp.placeholder="Jouw naam";
+    nameInp.oninput = e => onlineCreateName = e.target.value;
+    card.appendChild(nameInp);
+    card.appendChild(el("label","","Ronde"));
+    const lenRow = el("div","row");
+    [9,18].forEach(n=>{
+      const b = el("button","btn " + (onlineCreateLength===n?"btn-primary":"btn-ghost"), n+" holes");
+      b.onclick = () => { onlineCreateLength=n; render(); };
+      lenRow.appendChild(b);
+    });
+    card.appendChild(lenRow);
+    wrap.appendChild(card);
+
+    const createBtn = el("button","btn btn-primary", onlineBusy ? "Bezig..." : "Spel aanmaken ⛳");
+    createBtn.disabled = onlineBusy;
+    createBtn.style.fontSize="1.05rem"; createBtn.style.padding="16px";
+    createBtn.onclick = () => {
+      onlineBusy = true; onlineError = ""; render();
+      createOnlineGame(onlineCreateName, onlineCreateLength).finally(()=>{ onlineBusy=false; });
+    };
+    wrap.appendChild(createBtn);
+
+    const backBtn = el("button","btn btn-ghost","← Terug");
+    backBtn.style.marginTop="8px";
+    backBtn.onclick = () => { onlineUiScreen="menu"; onlineError=""; render(); };
+    wrap.appendChild(backBtn);
+  } else if (onlineUiScreen === "join"){
+    const card = el("div","card");
+    card.appendChild(el("h3","","Meedoen met code"));
+    card.appendChild(el("label","","Spelcode"));
+    const codeInp = el("input"); codeInp.type="text"; codeInp.value=onlineJoinCode; codeInp.maxLength=8; codeInp.placeholder="bv. A7K2QX";
+    codeInp.style.textTransform="uppercase";
+    codeInp.oninput = e => onlineJoinCode = e.target.value.toUpperCase();
+    card.appendChild(codeInp);
+    card.appendChild(el("label","","Jouw naam"));
+    const nameInp = el("input"); nameInp.type="text"; nameInp.value=onlineJoinName; nameInp.maxLength=18; nameInp.placeholder="Jouw naam";
+    nameInp.oninput = e => onlineJoinName = e.target.value;
+    card.appendChild(nameInp);
+    wrap.appendChild(card);
+
+    const joinBtn = el("button","btn btn-primary", onlineBusy ? "Bezig..." : "Meedoen ⛳");
+    joinBtn.disabled = onlineBusy;
+    joinBtn.style.fontSize="1.05rem"; joinBtn.style.padding="16px";
+    joinBtn.onclick = () => {
+      onlineBusy = true; onlineError = ""; render();
+      joinOnlineGame(onlineJoinCode, onlineJoinName).finally(()=>{ onlineBusy=false; });
+    };
+    wrap.appendChild(joinBtn);
+
+    const backBtn = el("button","btn btn-ghost","← Terug");
+    backBtn.style.marginTop="8px";
+    backBtn.onclick = () => { onlineUiScreen="menu"; onlineError=""; render(); };
+    wrap.appendChild(backBtn);
+  } else {
+    const card = el("div","card");
+    card.appendChild(el("h3","","Samen spelen op afstand"));
+    card.appendChild(el("p","","Jullie spelen allebei op je eigen toestel, verbonden via internet — geen pass-and-play nodig."));
+    wrap.appendChild(card);
+
+    const newBtn = el("button","btn btn-primary","Nieuw spel starten");
+    newBtn.style.fontSize="1.05rem"; newBtn.style.padding="16px";
+    newBtn.onclick = () => { onlineUiScreen="create"; onlineError=""; render(); };
+    wrap.appendChild(newBtn);
+
+    const joinBtn = el("button","btn btn-ghost","Meedoen met code");
+    joinBtn.style.marginTop="8px";
+    joinBtn.onclick = () => { onlineUiScreen="join"; onlineError=""; render(); };
+    wrap.appendChild(joinBtn);
+  }
+
+  return wrap;
+}
+
+/* ---- online wachtkamer ---- */
+function renderLobby(){
+  const wrap = el("div");
+  const top = el("div","topbar");
+  top.appendChild(el("div","title","⛳ Papiergolf"));
+  const leaveBtn = el("button","pillbtn","⟲");
+  leaveBtn.onclick = () => { if (confirm("Spel verlaten?")){ leaveOnline(); G=null; render(); } };
+  top.appendChild(leaveBtn);
+  wrap.appendChild(top);
+
+  wrap.appendChild(el("h2","","Wachtkamer"));
+  wrap.appendChild(el("p","","Deel deze code met de anderen:"));
+  const codeBox = el("div","", `<span class="seed-badge" style="font-size:1.4rem;padding:10px 18px;">${G.code}</span>`);
+  codeBox.style.cssText = "text-align:center;margin:10px 0 20px;";
+  wrap.appendChild(codeBox);
+
+  const card = el("div","card");
+  card.appendChild(el("h3","", `Spelers (${G.players.length})`));
+  G.players.forEach((p,i)=>{
+    const row = el("div","player-row");
+    row.appendChild(el("div","player-dot")).style.background = p.color;
+    row.appendChild(el("div","", p.name + (i===0 ? " — host" : "")));
+    card.appendChild(row);
+  });
+  wrap.appendChild(card);
+
+  if (myPlayerIndex === 0){
+    const startBtn = el("button","btn btn-primary","Start spel ⛳");
+    startBtn.style.fontSize="1.05rem"; startBtn.style.padding="16px";
+    startBtn.onclick = startOnlineRound;
+    wrap.appendChild(startBtn);
+    wrap.appendChild(el("p","", "Jij bent de host — start zodra iedereen de code heeft ingevuld."));
+  } else {
+    wrap.appendChild(el("p","", "Wachten tot de host het spel start..."));
+  }
+
+  return wrap;
+}
+
 /* ---- game screen ---- */
 function renderGame(){
+  if (G.phase === "lobby") return renderLobby();
+
   const wrap = el("div");
+  const isOnline = !!G.online;
+  const isMyTurn = !isOnline || G.turn === myPlayerIndex;
 
   const top = el("div","topbar");
   top.appendChild(el("div","title","⛳ Papiergolf"));
@@ -546,7 +814,7 @@ function renderGame(){
   const helpBtn = el("button","pillbtn","?");
   helpBtn.onclick = () => openRulesModal();
   const newBtn = el("button","pillbtn","⟲");
-  newBtn.onclick = () => { if (confirm("Huidig spel stoppen en terug naar start?")){ G=null; clearState(); render(); } };
+  newBtn.onclick = () => { if (confirm("Huidig spel stoppen en terug naar start?")){ if (isOnline) leaveOnline(); G=null; clearState(); render(); } };
   ctr.appendChild(scoreBtn); ctr.appendChild(helpBtn); ctr.appendChild(newBtn);
   top.appendChild(ctr);
   wrap.appendChild(top);
@@ -554,7 +822,7 @@ function renderGame(){
   const info = el("div","hole-info");
   const parLabel = {3:"Par 3",4:"Par 4",5:"Par 5"}[G.hole.par];
   info.appendChild(el("div","big", `Hole ${G.holeIndex+1} van ${G.roundLength} · ${parLabel}`));
-  info.appendChild(el("div","code", `Baan: <span class="seed-badge">${G.baseSeed}</span>`));
+  info.appendChild(el("div","code", isOnline ? `Code: <span class="seed-badge">${G.code}</span>` : `Baan: <span class="seed-badge">${G.baseSeed}</span>`));
   wrap.appendChild(info);
 
   if (scoreboardOpen) wrap.appendChild(renderScoreboard());
@@ -568,7 +836,7 @@ function renderGame(){
   banner.style.border = "1px solid " + p.color;
   banner.appendChild(colorAvatar(p.color, p.name[0]?.toUpperCase() || "?"));
   const bt = el("div","");
-  bt.appendChild(el("div","", `${p.name} is aan de beurt`));
+  bt.appendChild(el("div","", isOnline ? (isMyTurn ? "Jouw beurt!" : `${p.name} is aan de beurt — wachten...`) : `${p.name} is aan de beurt`));
   bt.appendChild(el("div","", `<span style="font-weight:400;color:var(--muted);font-size:.82rem">Slagen deze hole: ${p.strokesThisHole}</span>`));
   banner.appendChild(bt);
   wrap.appendChild(banner);
@@ -579,9 +847,9 @@ function renderGame(){
   const spacer = el("div"); spacer.style.height = "220px";
   wrap.appendChild(spacer);
 
-  wrap.appendChild(renderActionBar());
+  wrap.appendChild(renderActionBar(isMyTurn, p));
 
-  if (G.phase === "pass") wrap.appendChild(renderPassOverlay(p));
+  if (G.phase === "pass" && !isOnline) wrap.appendChild(renderPassOverlay(p));
 
   return wrap;
 }
@@ -600,9 +868,15 @@ function penaltyBadge(hazard, amount){
 }
 
 /* ---- vaste onderbalk: 1) lengte rechtdoor, 2) breedte + kiezen, 3) resultaat ---- */
-function renderActionBar(){
+function renderActionBar(isMyTurn, activePlayer){
   const outer = el("div","action-bar-fixed");
   const inner = el("div","action-bar-inner");
+
+  if (!isMyTurn){
+    inner.appendChild(el("div","", `<div style="text-align:center;padding:10px 0;color:var(--muted);">⏳ Wacht op <strong style="color:var(--ink)">${activePlayer.name}</strong>...</div>`));
+    outer.appendChild(inner);
+    return outer;
+  }
 
   if (G.phase === "rolling-width"){
     const { lenRoll, forwardPenalty, forwardHazard } = G.pendingRoll;
@@ -738,17 +1012,21 @@ function renderRoundEnd(){
     tbl.appendChild(tr);
   });
   box.appendChild(tbl);
-  box.appendChild(el("p","", `Baancode: <span class="seed-badge">${G.baseSeed}</span> — vul deze code in bij een nieuw spel om exact dezelfde baan nog eens te spelen.`));
+  if (!G.online){
+    box.appendChild(el("p","", `Baancode: <span class="seed-badge">${G.baseSeed}</span> — vul deze code in bij een nieuw spel om exact dezelfde baan nog eens te spelen.`));
+  }
   const row = el("div","row"); row.style.marginTop="12px";
   const again = el("button","btn btn-primary","Nieuwe ronde, zelfde spelers");
   again.onclick = () => {
     const players = G.players.map(p=>({name:p.name, color:p.color}));
     const seed = randomSeed();
-    G = newGame(players, G.roundLength, seed);
-    saveState(); render();
+    const wasOnline = G.online, code = G.code;
+    G = newGame(players, G.roundLength, seed, wasOnline);
+    if (wasOnline) G.code = code;
+    persist(); render();
   };
   const toStart = el("button","btn btn-ghost","Terug naar start");
-  toStart.onclick = () => { G=null; clearState(); setupMode="multi"; setupPlayers=[{name:"",color:PLAYER_COLORS[0]},{name:"",color:PLAYER_COLORS[1]}]; render(); };
+  toStart.onclick = () => { if (G.online) leaveOnline(); G=null; clearState(); setupMode="multi"; setupPlayers=[{name:"",color:PLAYER_COLORS[0]},{name:"",color:PLAYER_COLORS[1]}]; render(); };
   row.appendChild(again); row.appendChild(toStart);
   box.appendChild(row);
   return box;
@@ -892,9 +1170,14 @@ function openRulesModal(){
 
 /* ============================= init ============================= */
 (function init(){
+  // Direct iets tonen (lokale sessie, of het startscherm) terwijl we op de achtergrond
+  // checken of er een lopend online spel is om weer bij aan te haken.
   const saved = loadState();
   if (saved) G = saved;
   render();
+  if (loadOnlineSession()){
+    reconnectOnline().then((ok) => { if (ok) render(); });
+  }
   if ("serviceWorker" in navigator){
     window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(()=>{}); });
     // Zodra een nieuwe versie van de service worker het overneemt, automatisch herladen
