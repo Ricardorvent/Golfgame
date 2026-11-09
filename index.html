@@ -120,9 +120,9 @@
   <div class="legend">
     <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway/tee: bonus op de lengte (2 dobbelstenen, hoogste telt)</div>
     <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone lengteworp</div>
-    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp op de lengte (2 dobbelstenen, laagste telt)</div>
-    <div class="li"><span class="sw" style="background:var(--water)"></span>Water: overvliegen mag, landen niet — kost 1 strafslag</div>
-    <div class="li"><span class="sw" style="background:var(--trees)"></span>Bomen: blokkeren je pad, bal stopt ervoor</div>
+    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp op de volgende lengte + <strong>1 strafslag</strong> als je erin landt</div>
+    <div class="li"><span class="sw" style="background:var(--water)"></span>Water: overvliegen mag, landen niet — bal springt terug naar droog, <strong>2 strafslagen</strong></div>
+    <div class="li"><span class="sw" style="background:var(--trees)"></span>Bomen: je mag erin landen (blokkeert niet) — kost <strong>4 strafslagen</strong>, daarna gewoon verder</div>
     <div class="li"><span class="sw" style="background:var(--green)"></span>Green: de laatste rij(en) voor de vlag</div>
   </div>
   <p>Een hole is <strong>par × 6 vakjes</strong> lang. Zodra je bal de laatste rij bereikt of passeert, is de hole uit — geen aparte putt nodig, precies op de vlag landen hoeft niet.</p>
@@ -247,10 +247,16 @@ function rollForTerrain(t){
   const value = mod==="adv" ? Math.max(d1,d2) : Math.min(d1,d2);
   return {value, dice:[d1,d2], mod};
 }
+// Strafslagen per hazard waar je in landt: zand = 1, water = 2, bomen = 4. Bomen blokkeren
+// het pad niet meer (je mag erin landen, en je volgende beurt gewoon weer verder) - alleen
+// water "kan" je niet echt in staan: de bal springt terug naar het laatste droge vakje.
+const TERRAIN_PENALTY = { S: 1, W: 2, X: 4 };
+const HAZARD_NAME = { S: "sand", W: "water", X: "trees" };
+
 // Yahtzee-stijl: lengte-dobbelsteen = vakjes vooruit, breedte-dobbelsteen = vakjes opzij.
 // De speler kiest zelf links of rechts voor de breedte. De bal loopt in een rechte lijn
 // naar (start.r + totalDr, start.c + totalDc); elke tussenstap wordt afgerond naar het
-// dichtstbijzijnde vakje zodat schuine lijnen ook via bomen/water correct worden afgehandeld.
+// dichtstbijzijnde vakje zodat schuine lijnen ook via hazards correct worden afgehandeld.
 function computePath(start, totalDr, totalDc, hole){
   const steps = Math.max(Math.abs(totalDr), Math.abs(totalDc));
   if (steps === 0) return [];
@@ -263,7 +269,6 @@ function computePath(start, totalDr, totalDc, hole){
     if (nr<0 || nr>=hole.rows || nc<0 || nc>=hole.cols) break;
     if (nr===last.r && nc===last.c) continue; // zelfde vakje door afronding, geen extra stap
     const terrain = hole.grid[nr][nc];
-    if (terrain === "X") break;
     path.push({r:nr, c:nc, terrain});
     last = {r:nr, c:nc};
   }
@@ -272,14 +277,18 @@ function computePath(start, totalDr, totalDc, hole){
 function resolveShot(pos, totalDr, totalDc, hole){
   const path = computePath(pos, totalDr, totalDc, hole);
   let landing = path.length ? path[path.length-1] : {...pos, terrain: hole.grid[pos.r][pos.c]};
-  let penalty = false;
+  let penalty = 0, hazard = null;
   if (landing.terrain === "W"){
-    penalty = true;
+    penalty = TERRAIN_PENALTY.W; hazard = HAZARD_NAME.W;
     let dry = null;
     for (let i=path.length-2; i>=0; i--){ if (path[i].terrain !== "W"){ dry = path[i]; break; } }
     landing = dry || {...pos, terrain: hole.grid[pos.r][pos.c]};
+  } else if (landing.terrain === "S"){
+    penalty = TERRAIN_PENALTY.S; hazard = HAZARD_NAME.S;
+  } else if (landing.terrain === "X"){
+    penalty = TERRAIN_PENALTY.X; hazard = HAZARD_NAME.X;
   }
-  return {landing, penalty, path};
+  return {landing, penalty, hazard, path};
 }
 
 /* ============================= persistence ============================= */
@@ -358,13 +367,13 @@ function doRollForward(){
   const lenRoll = rollForTerrain(terrain);
   const result = resolveShot(p.pos, lenRoll.value, 0, G.hole);
   p.pos = {r: result.landing.r, c: result.landing.c};
-  const holedOut = !result.penalty && p.pos.r >= G.hole.rows - 1;
+  const holedOut = p.pos.r >= G.hole.rows - 1;
 
   if (holedOut){
-    finishShot({ lenRoll, widRoll:null, dir:0, forwardPenalty: result.penalty, lateralPenalty:false, holedOut:true });
+    finishShot({ lenRoll, widRoll:null, dir:0, forwardPenalty: result.penalty, forwardHazard: result.hazard, lateralPenalty:0, lateralHazard:null, holedOut:true });
     return;
   }
-  G.pendingRoll = { lenRoll, forwardPenalty: result.penalty };
+  G.pendingRoll = { lenRoll, forwardPenalty: result.penalty, forwardHazard: result.hazard };
   G.phase = "rolling-width";
   saveState();
   render();
@@ -383,16 +392,16 @@ function doRollWidth(){
 // Stap 3: speler kiest links of rechts; die zijwaartse stap wordt meteen afgehandeld.
 function chooseSide(dir){ // dir: -1 = links, +1 = rechts
   const p = currentPlayer();
-  const { lenRoll, widRoll, forwardPenalty } = G.pendingRoll;
+  const { lenRoll, widRoll, forwardPenalty, forwardHazard } = G.pendingRoll;
   const result = resolveShot(p.pos, 0, dir*widRoll.value, G.hole);
   p.pos = {r: result.landing.r, c: result.landing.c};
-  const holedOut = !result.penalty && p.pos.r >= G.hole.rows - 1;
-  finishShot({ lenRoll, widRoll, dir, forwardPenalty, lateralPenalty: result.penalty, holedOut });
+  const holedOut = p.pos.r >= G.hole.rows - 1;
+  finishShot({ lenRoll, widRoll, dir, forwardPenalty, forwardHazard, lateralPenalty: result.penalty, lateralHazard: result.hazard, holedOut });
 }
 
 function finishShot(res){
   const p = currentPlayer();
-  p.strokesThisHole += 1 + (res.forwardPenalty?1:0) + (res.lateralPenalty?1:0);
+  p.strokesThisHole += 1 + (res.forwardPenalty||0) + (res.lateralPenalty||0);
   if (res.holedOut){
     p.finished = true;
     p.strokes[G.holeIndex] = p.strokesThisHole;
@@ -577,10 +586,15 @@ function renderGame(){
   return wrap;
 }
 
-function mkDie(val, used){ const d = el("div","die" + (used?" used":""), String(val)); return d; }
-
-function penaltyBadge(label){
-  const badge = el("div","entry penalty", `💦 ${label} — +1 strafslag`);
+const HAZARD_BADGE = {
+  water: {icon:"💦", label:"In het water"},
+  sand: {icon:"🏖️", label:"In het zand"},
+  trees: {icon:"🌲", label:"In de bomen"}
+};
+function penaltyBadge(hazard, amount){
+  const h = HAZARD_BADGE[hazard];
+  const word = amount===1 ? "strafslag" : "strafslagen";
+  const badge = el("div","entry penalty", `${h.icon} ${h.label} — +${amount} ${word}`);
   badge.style.cssText += "text-align:center;background:var(--surface2);padding:8px 12px;border-radius:10px;margin:4px 0 10px;";
   return badge;
 }
@@ -591,13 +605,9 @@ function renderActionBar(){
   const inner = el("div","action-bar-inner");
 
   if (G.phase === "rolling-width"){
-    const { lenRoll, forwardPenalty } = G.pendingRoll;
-    const dd = el("div","dice-display");
-    if (lenRoll.dice.length===1) dd.appendChild(mkDie(lenRoll.dice[0], true));
-    else lenRoll.dice.forEach(d => dd.appendChild(mkDie(d, d===lenRoll.value)));
-    inner.appendChild(dd);
-    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:-2px 0 2px;">Je sloeg ${lenRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">rechtdoor${lenRoll.mod==="adv"?" · fairwaybonus":lenRoll.mod==="dis"?" · strafworp":""}</div>`));
-    if (forwardPenalty) inner.appendChild(penaltyBadge("in het water"));
+    const { lenRoll, forwardPenalty, forwardHazard } = G.pendingRoll;
+    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:2px 0 2px;">Je sloeg ${lenRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">rechtdoor${lenRoll.mod==="adv"?" · fairwaybonus":lenRoll.mod==="dis"?" · strafworp":""}</div>`));
+    if (forwardPenalty) inner.appendChild(penaltyBadge(forwardHazard, forwardPenalty));
 
     const btn = el("button","btn btn-primary","🎲 Gooi voor breedte");
     btn.style.fontSize="1.1rem"; btn.style.padding="16px";
@@ -605,10 +615,7 @@ function renderActionBar(){
     inner.appendChild(btn);
   } else if (G.phase === "choose-side"){
     const { widRoll } = G.pendingRoll;
-    const dd = el("div","dice-display");
-    dd.appendChild(mkDie(widRoll.value, true));
-    inner.appendChild(dd);
-    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:-2px 0 2px;">Je sloeg ${widRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">opzij — kies links of rechts (zie stippellijn op het bord)</div>`));
+    inner.appendChild(el("div","", `<div style="text-align:center;font-size:.9rem;font-weight:700;margin:2px 0 2px;">Je sloeg ${widRoll.value}</div><div style="text-align:center;font-size:.72rem;color:var(--muted);margin:0 0 10px;">opzij — kies links of rechts (zie stippellijn op het bord)</div>`));
 
     const row = el("div","row");
     const leftBtn = el("button","btn btn-primary", `⬅️ ${widRoll.value} links`);
@@ -619,7 +626,10 @@ function renderActionBar(){
     inner.appendChild(row);
   } else if (G.phase === "result"){
     const res = G.pendingResult;
-    if (res.lateralPenalty) inner.appendChild(penaltyBadge("in het water"));
+    if (res.widRoll){
+      inner.appendChild(el("div","", `<div style="text-align:center;font-size:.85rem;color:var(--muted);margin:2px 0 10px;">${res.widRoll.value} naar ${res.dir<0?"links":"rechts"}</div>`));
+    }
+    if (res.lateralPenalty) inner.appendChild(penaltyBadge(res.lateralHazard, res.lateralPenalty));
 
     const btn = el("button","btn btn-primary", res.holedOut ? "Volgende hole wordt klaargezet →" : "Door →");
     btn.style.fontSize="1.05rem"; btn.style.padding="16px";
