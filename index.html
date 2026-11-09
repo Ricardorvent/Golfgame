@@ -16,8 +16,8 @@
   :root{
     --bg:#0f3d22; --surface:#164a2b; --surface2:#1c5634; --ink:#f4fbf3; --muted:#bcd9c2;
     --accent:#ffb703; --accent-ink:#1a1206; --danger:#e8544a; --ok:#6fd38a;
-    --fairway:#7fb86a; --tee:#9ad17f; --rough:#3f6b3a; --sand:#e3c878; --water:#4a90d9;
-    --trees:#24401f; --green:#a7e8a0; --pin:#ffffff; --radius:16px;
+    --fairway:#8fd17a; --tee:#8fd17a; --rough:#2f5c28; --sand:#a9743f; --water:#3f7fd1;
+    --trees:#17300f; --green:#cdf0c3; --pin:#ffffff; --radius:16px;
     font-size: 16px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -156,8 +156,8 @@ const LENGTH_BY_PAR = {3: 3*6, 4: 4*6, 5: 5*6}; // par x 6 vakjes lengte
 // Richtingswaaier: 6 opties van ~9 tot ~3 uur (altijd naar voren, nooit pal opzij).
 // Een dobbelsteen bepaalt WELKE van de 6 — puur dobbelgeluk, geen eigen keuze.
 const ANGLE_OPTIONS = [
-  {deg:-75, clock:"9"}, {deg:-45, clock:"10"}, {deg:-15, clock:"11"},
-  {deg:15, clock:"1"}, {deg:45, clock:"2"}, {deg:75, clock:"3"}
+  {deg:-60, clock:"9"}, {deg:-35, clock:"10"}, {deg:-12, clock:"11"},
+  {deg:12, clock:"1"}, {deg:35, clock:"2"}, {deg:60, clock:"3"}
 ];
 const TERRAIN_NAME = {T:"Tee",F:"Fairway",R:"Rough",S:"Zand",W:"Water",X:"Bomen",G:"Green"};
 
@@ -202,32 +202,33 @@ function generateHole(baseSeed, holeIndex, par){
     }
   }
 
-  const bunkerCount = clamp(Math.round(rows/7), 2, 6);
-  for (let i=0; i<bunkerCount; i++){
-    const r = 1 + Math.floor(rng()*(rows-2));
-    const c = Math.floor(rng()*COLS);
-    if (grid[r][c]==="F" || grid[r][c]==="R"){
-      grid[r][c] = "S";
-      if (rng() < 0.5){
-        const c2 = clamp(c + (rng()<0.5?-1:1), 0, COLS-1);
-        if (grid[r][c2]==="F" || grid[r][c2]==="R") grid[r][c2] = "S";
+  const maxRow = rows - greenRows - 1; // clusters blijven uit de green-zone
+
+  // Organische vlekken i.p.v. losse blokjes: een korte random walk per cluster,
+  // zodat zand/bomen als samenhangende vormen ogen (zoals op het fysieke bord).
+  function growCluster(terrain, size, allowedFrom){
+    let r = 1 + Math.floor(rng()*Math.max(1, maxRow-1));
+    let c = Math.floor(rng()*COLS);
+    const walkDirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    let placed = 0, attempts = 0;
+    while (placed<size && attempts<size*5){
+      attempts++;
+      if (r>=1 && r<maxRow && c>=0 && c<COLS && allowedFrom.includes(grid[r][c])){
+        grid[r][c] = terrain;
+        placed++;
       }
+      const [dr,dc] = walkDirs[Math.floor(rng()*walkDirs.length)];
+      r = clamp(r+dr, 0, rows-1);
+      c = clamp(c+dc, 0, COLS-1);
     }
   }
 
-  const treeClusters = clamp(Math.round(rows/6), 2, 7);
-  for (let i=0; i<treeClusters; i++){
-    const r = 1 + Math.floor(rng()*(rows-2));
-    const c = Math.floor(rng()*COLS);
-    if (grid[r][c]==="R"){
-      grid[r][c] = "X";
-      if (rng() < 0.6){
-        const r2 = clamp(r + (rng()<0.5?0:1), 0, rows-1);
-        const c2 = clamp(c + (rng()<0.5?-1:1), 0, COLS-1);
-        if (grid[r2][c2]==="R") grid[r2][c2] = "X";
-      }
-    }
-  }
+  const bunkerClusters = clamp(Math.round(rows/9), 1, 3);
+  for (let i=0; i<bunkerClusters; i++) growCluster("S", 3+Math.floor(rng()*4), ["F","R"]);
+
+  const treeClusters = clamp(Math.round(rows/6), 2, 6);
+  for (let i=0; i<treeClusters; i++) growCluster("X", 4+Math.floor(rng()*7), ["R"]);
+
   return {rows, cols:COLS, grid, pin, teeCol, par};
 }
 
@@ -284,6 +285,7 @@ function clearState(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 /* ============================= game state ============================= */
 let G = null; // active game, or null = on start screen
 let setupPlayers = [{name:"", color: PLAYER_COLORS[0]}, {name:"", color: PLAYER_COLORS[1]}];
+let setupMode = "multi"; // "solo" | "multi"
 let setupLength = 9;
 let setupSeed = "";
 let scoreboardOpen = false;
@@ -305,7 +307,9 @@ function newGame(players, roundLength, baseSeed){
     baseSeed, roundLength, pars, holeIndex, hole,
     players: gamePlayers,
     turn: 0,
-    phase: "pass", // pass | rolling | result | holeSummary | roundEnd
+    // pass | rolling | result | holeSummary | roundEnd
+    // Bij 1 speler is er niemand om aan "door te geven" — start meteen bij rolling.
+    phase: gamePlayers.length>1 ? "pass" : "rolling",
     pendingResult: null,
     log: [],
     startOffset: 0
@@ -321,7 +325,13 @@ function advanceTurn(){
   let i = G.turn;
   for (let k=0; k<n; k++){
     i = (i+1) % n;
-    if (!G.players[i].finished){ G.turn = i; G.phase = "pass"; G.pendingResult = null; return; }
+    if (!G.players[i].finished){
+      G.turn = i;
+      // Solo: geen "geef door"-overlay nodig, meteen weer kunnen gooien.
+      G.phase = n>1 ? "pass" : "rolling";
+      G.pendingResult = null;
+      return;
+    }
   }
   // everyone finished -> hole complete
   G.phase = "holeSummary";
@@ -414,24 +424,47 @@ function renderStart(){
   wrap.appendChild(el("h1", "", "⛳ Papiergolf"));
   wrap.appendChild(el("p", "", "Digitale, pass-and-play versie van het rol-en-schrijf golfspel. Gooi de dobbelsteen, kies een richting, en haal de vlag in zo min mogelijk slagen — samen met wie er ook maar meespeelt op dit toestel."));
 
+  const modeCard = el("div","card");
+  modeCard.appendChild(el("h3","","1. Hoeveel spelers?"));
+  const modeRow = el("div","row");
+  const soloBtn = el("button","btn " + (setupMode==="solo" ? "btn-primary" : "btn-ghost"), "🧍 Alleen (1 speler)");
+  const multiBtn = el("button","btn " + (setupMode==="multi" ? "btn-primary" : "btn-ghost"), "👥 Met anderen (2-8)");
+  soloBtn.onclick = () => {
+    setupMode = "solo";
+    setupPlayers = [setupPlayers[0] || {name:"", color: PLAYER_COLORS[0]}];
+    render();
+  };
+  multiBtn.onclick = () => {
+    setupMode = "multi";
+    if (setupPlayers.length<2) setupPlayers.push({name:"", color: PLAYER_COLORS[1]});
+    render();
+  };
+  modeRow.appendChild(soloBtn); modeRow.appendChild(multiBtn);
+  modeCard.appendChild(modeRow);
+  wrap.appendChild(modeCard);
+
   const card = el("div", "card");
-  card.appendChild(el("h3", "", "Spelers"));
+  card.appendChild(el("h3", "", setupMode==="solo" ? "2. Jouw naam" : "2. Spelers"));
   const playersBox = el("div", "", "");
   card.appendChild(playersBox);
-  const addBtn = el("button", "btn btn-ghost btn-sm", "+ Speler toevoegen");
-  addBtn.style.marginTop="4px";
-  addBtn.onclick = () => { if (setupPlayers.length<8){ setupPlayers.push({name:"", color: PLAYER_COLORS[setupPlayers.length % PLAYER_COLORS.length]}); render(); } };
-  card.appendChild(addBtn);
+  if (setupMode==="multi"){
+    const addBtn = el("button", "btn btn-ghost btn-sm", "+ Speler toevoegen");
+    addBtn.style.marginTop="4px";
+    addBtn.onclick = () => { if (setupPlayers.length<8){ setupPlayers.push({name:"", color: PLAYER_COLORS[setupPlayers.length % PLAYER_COLORS.length]}); render(); } };
+    card.appendChild(addBtn);
+  }
 
   function renderPlayers(){
     playersBox.innerHTML = "";
     setupPlayers.forEach((p, i) => {
       const row = el("div", "player-row");
       row.appendChild(el("div","player-dot")).style.background = p.color;
-      const inp = el("input"); inp.type="text"; inp.placeholder = `Naam speler ${i+1}`; inp.value = p.name; inp.maxLength=18;
+      const inp = el("input"); inp.type="text";
+      inp.placeholder = setupMode==="solo" ? "Jouw naam" : `Naam speler ${i+1}`;
+      inp.value = p.name; inp.maxLength=18;
       inp.oninput = e => { setupPlayers[i].name = e.target.value; };
       row.appendChild(inp);
-      if (setupPlayers.length>1){
+      if (setupMode==="multi" && setupPlayers.length>1){
         const rm = el("button","iconbtn","✕");
         rm.onclick = () => { setupPlayers.splice(i,1); render(); };
         row.appendChild(rm);
@@ -443,7 +476,7 @@ function renderStart(){
   wrap.appendChild(card);
 
   const card2 = el("div","card");
-  card2.appendChild(el("h3","","Ronde"));
+  card2.appendChild(el("h3","","3. Ronde"));
   const lenRow = el("div","row");
   [9,18].forEach(n=>{
     const b = el("button", "btn " + (setupLength===n ? "btn-primary" : "btn-ghost"), n + " holes");
@@ -711,68 +744,107 @@ function renderRoundEnd(){
     saveState(); render();
   };
   const toStart = el("button","btn btn-ghost","Terug naar start");
-  toStart.onclick = () => { G=null; clearState(); setupPlayers=[{name:"",color:PLAYER_COLORS[0]},{name:"",color:PLAYER_COLORS[1]}]; render(); };
+  toStart.onclick = () => { G=null; clearState(); setupMode="multi"; setupPlayers=[{name:"",color:PLAYER_COLORS[0]},{name:"",color:PLAYER_COLORS[1]}]; render(); };
   row.appendChild(again); row.appendChild(toStart);
   box.appendChild(row);
   return box;
 }
 
-/* ---- board SVG ---- */
-const TERRAIN_COLOR = {T:"#9ad17f",F:"#7fb86a",R:"#3f6b3a",S:"#e3c878",W:"#4a90d9",X:"#24401f",G:"#a7e8a0"};
+/* ---- board SVG: dot-grid papierstijl met organische terreinvlekken ---- */
+// Geïnspireerd op het fysieke Paper Apps GOLF-notitieboekje: een rasterpunt per vakje,
+// terrein als vloeiende gekleurde vlekken (overlappende cirkels) in plaats van harde blokjes.
+const TERRAIN_COLOR = {T:"#8fd17a", F:"#8fd17a", R:"#2f5c28", S:"#a9743f", W:"#3f7fd1", X:"#17300f", G:"#cdf0c3"};
+const BOARD_PAPER = "#f3f0e6";
+const BOARD_DOT = "#c7c3b2";
 function renderBoard(){
   const hole = G.hole;
-  const cell = 44, pad = 6;
+  const cell = 42, pad = 11;
   const w = COLS*cell + pad*2;
   const h = hole.rows*cell + pad*2;
-  const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns,"svg");
   svg.setAttribute("class","board");
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  svg.style.background = "#2c5a1f";
 
+  function center(r,c){ return { x: pad + c*cell + cell/2, y: h - pad - (r+0.5)*cell }; }
+  const mk = (tag) => document.createElementNS(ns, tag);
+
+  const bg = mk("rect");
+  bg.setAttribute("x",0); bg.setAttribute("y",0); bg.setAttribute("width",w); bg.setAttribute("height",h);
+  bg.setAttribute("rx",14); bg.setAttribute("fill",BOARD_PAPER);
+  svg.appendChild(bg);
+
+  function drawBlobLayer(types){
+    for (let r=0; r<hole.rows; r++){
+      for (let c=0; c<COLS; c++){
+        const t = hole.grid[r][c];
+        if (!types.includes(t)) continue;
+        const {x,y} = center(r,c);
+        const circle = mk("circle");
+        circle.setAttribute("cx",x); circle.setAttribute("cy",y);
+        circle.setAttribute("r", cell*0.74); // groot genoeg zodat ook diagonale buren naadloos aansluiten
+        circle.setAttribute("fill", TERRAIN_COLOR[t]);
+        svg.appendChild(circle);
+      }
+    }
+  }
+  drawBlobLayer(["R","F","T"]);   // basislaag: fairway/rough
+  drawBlobLayer(["S","W","X","G"]); // vlekken erbovenop: zand/water/bomen/green
+
+  // rasterpunten, bovenop de vlekken (net als op het papieren bord)
   for (let r=0; r<hole.rows; r++){
     for (let c=0; c<COLS; c++){
-      const terrain = hole.grid[r][c];
-      const y = h - pad - (r+1)*cell; // row 0 (tee) at bottom
-      const x = pad + c*cell;
-      const rect = document.createElementNS(svg.namespaceURI,"rect");
-      rect.setAttribute("x", x); rect.setAttribute("y", y);
-      rect.setAttribute("width", cell-2); rect.setAttribute("height", cell-2);
-      rect.setAttribute("rx", 6);
-      rect.setAttribute("fill", TERRAIN_COLOR[terrain] || "#3f6b3a");
-      svg.appendChild(rect);
-      if (terrain === "X"){
-        const tx = document.createElementNS(svg.namespaceURI,"text");
-        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+6); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","20");
+      const {x,y} = center(r,c);
+      const dot = mk("circle");
+      dot.setAttribute("cx",x); dot.setAttribute("cy",y); dot.setAttribute("r",2.1);
+      dot.setAttribute("fill", BOARD_DOT);
+      svg.appendChild(dot);
+    }
+  }
+
+  // boomicoontjes
+  for (let r=0; r<hole.rows; r++){
+    for (let c=0; c<COLS; c++){
+      if (hole.grid[r][c]==="X"){
+        const {x,y} = center(r,c);
+        const tx = mk("text");
+        tx.setAttribute("x",x); tx.setAttribute("y",y+6); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","17");
         tx.textContent = "🌲"; svg.appendChild(tx);
-      }
-      if (terrain === "T"){
-        const tx = document.createElementNS(svg.namespaceURI,"text");
-        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+6); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","16");
-        tx.textContent = "⛳"; svg.appendChild(tx);
-      }
-      if (r===hole.pin.r && c===hole.pin.c){
-        const tx = document.createElementNS(svg.namespaceURI,"text");
-        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+7); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","20");
-        tx.textContent = "🚩"; svg.appendChild(tx);
       }
     }
   }
 
-  // balls, offset if sharing a cell
+  // tee: gevulde stip
+  {
+    const {x,y} = center(0, hole.teeCol);
+    const dot = mk("circle");
+    dot.setAttribute("cx",x); dot.setAttribute("cy",y); dot.setAttribute("r",7);
+    dot.setAttribute("fill","#20180f");
+    svg.appendChild(dot);
+  }
+
+  // hole/pin: holle ring
+  {
+    const {x,y} = center(hole.pin.r, hole.pin.c);
+    const ring = mk("circle");
+    ring.setAttribute("cx",x); ring.setAttribute("cy",y); ring.setAttribute("r",9);
+    ring.setAttribute("fill",BOARD_PAPER); ring.setAttribute("stroke","#20180f"); ring.setAttribute("stroke-width","3");
+    svg.appendChild(ring);
+  }
+
+  // ballen, verspringend als meerdere spelers hetzelfde vakje delen
   const byCell = {};
   G.players.forEach(p => { const k = p.pos.r+","+p.pos.c; (byCell[k] = byCell[k]||[]).push(p); });
   Object.values(byCell).forEach(group => {
     group.forEach((p, idx) => {
-      const r = p.pos.r, c = p.pos.c;
-      const y = h - pad - (r+1)*cell + cell/2;
-      const x = pad + c*cell + cell/2;
+      const {x,y} = center(p.pos.r, p.pos.c);
       const n = group.length;
-      const offX = n>1 ? (idx - (n-1)/2) * 10 : 0;
-      const circle = document.createElementNS(svg.namespaceURI,"circle");
+      const offX = n>1 ? (idx - (n-1)/2) * 11 : 0;
+      const circle = mk("circle");
       circle.setAttribute("cx", x+offX); circle.setAttribute("cy", y);
       circle.setAttribute("r", 7.5);
       circle.setAttribute("fill", p.color);
-      circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "1.5");
+      circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "1.8");
       svg.appendChild(circle);
     });
   });
