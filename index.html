@@ -72,6 +72,11 @@
   .dice-display{display:flex; justify-content:center; align-items:center; gap:10px; margin:6px 0 2px; font-size:1rem; color:var(--muted); min-height:1.3rem;}
   .die{font-size:1.6rem; font-weight:800; color:var(--ink); background:var(--surface2); border-radius:8px; padding:2px 10px; position:relative;}
   .die.used::after{content:"✓"; position:absolute; top:-6px; right:-6px; background:var(--ok); color:#06321a; border-radius:50%; width:16px; height:16px; font-size:.65rem; display:flex; align-items:center; justify-content:center;}
+  .dice-spin-wrap{display:inline-flex; gap:10px; align-items:center;}
+  .die-spin{display:inline-block; font-size:2rem; line-height:1; animation:dieWiggle .11s linear infinite;}
+  .die-spin.die-settled{animation:dieSettle .26s ease;}
+  @keyframes dieWiggle{0%{transform:rotate(-10deg) scale(1);}50%{transform:rotate(10deg) scale(1.1);}100%{transform:rotate(-10deg) scale(1);}}
+  @keyframes dieSettle{0%{transform:scale(1.4);}60%{transform:scale(.9);}100%{transform:scale(1);}}
   .scorebar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
   .action-bar-fixed{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:center; pointer-events:none;}
   .action-bar-inner{
@@ -162,6 +167,35 @@ function mulberry32(a){
 }
 function rngFor(baseSeed, holeIndex){ return mulberry32(hashSeed(baseSeed + "#" + holeIndex)()); }
 function rollD6(){ return 1 + Math.floor(Math.random()*6); }
+
+/* ---- korte "dobbelsteen draait" animatie, puur visueel (G wordt pas na
+   afloop aangepast, zodat er niets half-klaars gesynchroniseerd kan worden
+   met een online medespeler) ---- */
+const DICE_FACES = ["⚀","⚁","⚂","⚃","⚄","⚅"];
+function animateDiceRoll(btn, diceValues, onDone){
+  if (btn.dataset.rolling) return;
+  btn.dataset.rolling = "1";
+  btn.style.pointerEvents = "none";
+  const wrap = el("span","dice-spin-wrap");
+  diceValues.forEach(() => wrap.appendChild(el("span","die-spin", DICE_FACES[0])));
+  btn.innerHTML = "";
+  btn.appendChild(wrap);
+  const spins = wrap.querySelectorAll(".die-spin");
+  let tick = 0;
+  const frames = 9;
+  const timer = setInterval(() => {
+    tick++;
+    spins.forEach((s) => { s.textContent = DICE_FACES[Math.floor(Math.random()*6)]; });
+    if (tick >= frames){
+      clearInterval(timer);
+      spins.forEach((s, idx) => {
+        s.textContent = DICE_FACES[clamp(diceValues[idx]-1, 0, 5)];
+        s.classList.add("die-settled");
+      });
+      setTimeout(onDone, 190); // even laten "landen" voor de echte uitkomst verschijnt
+    }
+  }, 55);
+}
 
 /* ============================= constants ============================= */
 const PLAYER_COLORS = ["#e63946","#2a9d8f","#f4a261","#8338ec","#ffbe0b","#3a86ff","#fb8500","#06d6a0"];
@@ -295,11 +329,15 @@ function resolveShot(pos, totalDr, totalDc, hole){
   return {landing, penalty, hazard, path};
 }
 
-/* ============================= persistence ============================= */
+/* ============================= persistence =============================
+   sessionStorage (niet localStorage): een ververste pagina hervat het
+   lopende spel nog steeds, maar zodra het tabblad/de app echt gesloten
+   wordt (weggeklikt) is de sessie weg — de link opnieuw openen geeft dan
+   gegarandeerd een schone start, niet een oud/afgelopen spel. */
 const SAVE_KEY = "papiergolf_v1";
-function saveState(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(G)); }catch(e){} }
-function loadState(){ try{ const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
-function clearState(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function saveState(){ try{ sessionStorage.setItem(SAVE_KEY, JSON.stringify(G)); }catch(e){} }
+function loadState(){ try{ const raw = sessionStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
+function clearState(){ try{ sessionStorage.removeItem(SAVE_KEY); }catch(e){} }
 
 /* ============================= online spelen (Supabase) ============================= */
 const SUPABASE_URL = "https://vsytrdgvsxmjvrlsqhse.supabase.co";
@@ -317,9 +355,9 @@ function getSupa(){
   if (!supaClient) supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   return supaClient;
 }
-function saveOnlineSession(){ try{ localStorage.setItem(ONLINE_SESSION_KEY, JSON.stringify({code: onlineCode, myPlayerIndex})); }catch(e){} }
-function loadOnlineSession(){ try{ const raw = localStorage.getItem(ONLINE_SESSION_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
-function clearOnlineSession(){ try{ localStorage.removeItem(ONLINE_SESSION_KEY); }catch(e){} }
+function saveOnlineSession(){ try{ sessionStorage.setItem(ONLINE_SESSION_KEY, JSON.stringify({code: onlineCode, myPlayerIndex})); }catch(e){} }
+function loadOnlineSession(){ try{ const raw = sessionStorage.getItem(ONLINE_SESSION_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
+function clearOnlineSession(){ try{ sessionStorage.removeItem(ONLINE_SESSION_KEY); }catch(e){} }
 
 async function pushOnlineState(){
   const supa = getSupa();
@@ -480,33 +518,40 @@ function startHole(index){
 }
 
 // Stap 1: eerst rechtdoor — lengte gooien (fairway-bonus/zand-strafworp), bal beweegt
-// meteen recht vooruit zodat je die beweging als eerste ziet.
-function doRollForward(){
+// meteen recht vooruit zodat je die beweging als eerste ziet. De worp wordt direct
+// berekend, maar pas ná de draai-animatie op het bord/in G doorgevoerd en gesynchroniseerd
+// — zo zie je de dobbelsteen(en) echt op de juiste uitkomst landen.
+function doRollForward(btn){
   const p = currentPlayer();
   const terrain = G.hole.grid[p.pos.r][p.pos.c];
   const lenRoll = rollForTerrain(terrain);
   const result = resolveShot(p.pos, lenRoll.value, 0, G.hole);
-  p.pos = {r: result.landing.r, c: result.landing.c};
-  const holedOut = p.pos.r >= G.hole.rows - 1;
+  const holedOut = result.landing.r >= G.hole.rows - 1;
 
-  if (holedOut){
-    finishShot({ lenRoll, widRoll:null, dir:0, forwardPenalty: result.penalty, forwardHazard: result.hazard, lateralPenalty:0, lateralHazard:null, holedOut:true });
-    return;
-  }
-  G.pendingRoll = { lenRoll, forwardPenalty: result.penalty, forwardHazard: result.hazard };
-  G.phase = "rolling-width";
-  persist();
-  render();
+  animateDiceRoll(btn, lenRoll.dice, () => {
+    const pp = currentPlayer();
+    pp.pos = {r: result.landing.r, c: result.landing.c};
+    if (holedOut){
+      finishShot({ lenRoll, widRoll:null, dir:0, forwardPenalty: result.penalty, forwardHazard: result.hazard, lateralPenalty:0, lateralHazard:null, holedOut:true });
+      return;
+    }
+    G.pendingRoll = { lenRoll, forwardPenalty: result.penalty, forwardHazard: result.hazard };
+    G.phase = "rolling-width";
+    persist();
+    render();
+  });
 }
 
 // Stap 2: daarna breedte gooien (max 3) — toont een stippellijn-voorbeeld op het bord,
 // vanaf de nieuwe (al naar voren verplaatste) positie.
-function doRollWidth(){
+function doRollWidth(btn){
   const value = 1 + Math.floor(Math.random()*3); // breedte: altijd 1-3, puur dobbelgeluk
-  G.pendingRoll.widRoll = {value, dice:[value]};
-  G.phase = "choose-side";
-  persist();
-  render();
+  animateDiceRoll(btn, [value], () => {
+    G.pendingRoll.widRoll = {value, dice:[value]};
+    G.phase = "choose-side";
+    persist();
+    render();
+  });
 }
 
 // Stap 3: speler kiest links of rechts; die zijwaartse stap wordt meteen afgehandeld.
@@ -885,7 +930,7 @@ function renderActionBar(isMyTurn, activePlayer){
 
     const btn = el("button","btn btn-primary","🎲 Gooi voor breedte");
     btn.style.fontSize="1.1rem"; btn.style.padding="16px";
-    btn.onclick = doRollWidth;
+    btn.onclick = () => doRollWidth(btn);
     inner.appendChild(btn);
   } else if (G.phase === "choose-side"){
     const { widRoll } = G.pendingRoll;
@@ -912,7 +957,7 @@ function renderActionBar(isMyTurn, activePlayer){
   } else {
     const btn = el("button","btn btn-primary","🎲 Gooi voor lengte (rechtdoor)");
     btn.style.fontSize="1.1rem"; btn.style.padding="16px";
-    btn.onclick = doRollForward;
+    btn.onclick = () => doRollForward(btn);
     inner.appendChild(btn);
   }
 

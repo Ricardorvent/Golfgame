@@ -64,8 +64,10 @@ Zonder installeren werkt de link ook gewoon in de browser, maar dan alleen met i
 ## Techniek (voor later)
 
 Eén self-contained `index.html` (geen build-stap, geen frameworks) + `manifest.webmanifest`
-en `sw.js` voor de PWA-installatie/offline-cache. Voortgang van een lokaal spel wordt in de
-browser opgeslagen (`localStorage`), dus een ververste pagina hervat het spel.
+en `sw.js` voor de PWA-installatie/offline-cache. Voortgang van een lopend spel (lokaal én
+online) wordt bewaard in `sessionStorage`, niet `localStorage`: een ververste pagina hervat
+het spel nog steeds, maar zodra het tabblad/de app echt gesloten wordt (weggeklikt) is de
+sessie weg en geeft de link opnieuw openen gegarandeerd een schone start.
 
 Online spelen op afstand gebruikt een eigen, apart Supabase-project (los van andere
 projecten): één tabel `golf_games` (spelcode → spelstand als JSON), zonder login — iedereen
