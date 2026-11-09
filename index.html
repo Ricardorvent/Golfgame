@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Papiergolf</title>
+<meta name="description" content="Digitale pass-and-play golf: dobbelsteen, rooster en vrienden op één toestel.">
+<meta name="theme-color" content="#1f6d3a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Papiergolf">
+<style>
+  :root{
+    --bg:#0f3d22; --surface:#164a2b; --surface2:#1c5634; --ink:#f4fbf3; --muted:#bcd9c2;
+    --accent:#ffb703; --accent-ink:#1a1206; --danger:#e8544a; --ok:#6fd38a;
+    --fairway:#7fb86a; --tee:#9ad17f; --rough:#3f6b3a; --sand:#e3c878; --water:#4a90d9;
+    --trees:#24401f; --green:#a7e8a0; --pin:#ffffff; --radius:16px;
+    font-size: 16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:radial-gradient(circle at 50% -10%, #1c6b3c, var(--bg) 60%);
+    color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh; padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:14px 14px calc(14px + env(safe-area-inset-bottom));}
+  h1,h2,h3{margin:0 0 4px; font-weight:800; letter-spacing:.2px;}
+  h1{font-size:1.7rem;}
+  p{margin:0 0 8px; color:var(--muted); line-height:1.4;}
+  .hidden{display:none !important;}
+  .card{background:var(--surface); border-radius:var(--radius); padding:16px; margin-bottom:12px; box-shadow:0 4px 18px rgba(0,0,0,.25);}
+  .btn{
+    appearance:none; border:none; border-radius:12px; padding:13px 18px; font-size:1rem; font-weight:700;
+    cursor:pointer; color:var(--ink); background:var(--surface2); width:100%; transition:transform .08s ease;
+    display:flex; align-items:center; justify-content:center; gap:8px; touch-action:manipulation;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn:disabled{opacity:.4; pointer-events:none;}
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-ghost{background:transparent; border:1px solid rgba(255,255,255,.25);}
+  .btn-sm{padding:9px 12px; font-size:.85rem; width:auto;}
+  .row{display:flex; gap:8px;}
+  .row > *{flex:1;}
+  label{display:block; font-size:.8rem; color:var(--muted); margin:10px 0 4px; font-weight:600; text-transform:uppercase; letter-spacing:.4px;}
+  input[type=text], select{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.2);
+    background:#0d3019; color:var(--ink); font-size:1rem;
+  }
+  .player-row{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .player-dot{width:14px; height:14px; border-radius:50%; flex:0 0 auto;}
+  .player-row input{flex:1;}
+  .iconbtn{background:none; border:none; color:var(--muted); font-size:1.3rem; padding:4px 8px; cursor:pointer;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .topbar .title{font-weight:800; font-size:1.15rem;}
+  .topbar .controls{display:flex; gap:6px;}
+  .pillbtn{background:var(--surface2); border:none; color:var(--ink); border-radius:999px; padding:8px 10px; font-size:1rem; cursor:pointer;}
+  .hole-info{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .hole-info .big{font-size:1.1rem; font-weight:800;}
+  .hole-info .code{font-size:.72rem; color:var(--muted); opacity:.8;}
+  .board-wrap{display:flex; justify-content:center; margin-bottom:10px; touch-action:pan-y;}
+  svg.board{width:100%; max-width:380px; height:auto; display:block; border-radius:14px; overflow:visible;}
+  .turn-banner{display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; margin-bottom:10px; font-weight:700;}
+  .log{font-size:.85rem; color:var(--muted); max-height:120px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:4px;}
+  .log .entry{border-left:3px solid rgba(255,255,255,.15); padding-left:8px;}
+  .log .entry.penalty{border-left-color:var(--danger); color:#ffb3ad;}
+  .log .entry.holed{border-left-color:var(--ok); color:#bdf2c8;}
+  .dice-display{display:flex; justify-content:center; align-items:center; gap:10px; margin:6px 0 2px; font-size:1rem; color:var(--muted); min-height:1.3rem;}
+  .die{font-size:1.6rem; font-weight:800; color:var(--ink); background:var(--surface2); border-radius:8px; padding:2px 10px; position:relative;}
+  .die.used::after{content:"✓"; position:absolute; top:-6px; right:-6px; background:var(--ok); color:#06321a; border-radius:50%; width:16px; height:16px; font-size:.65rem; display:flex; align-items:center; justify-content:center;}
+  .dirpad{
+    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:6px;
+    max-width:260px; margin:10px auto 4px; aspect-ratio:1/1;
+  }
+  .dirpad button{
+    background:var(--surface2); border:none; border-radius:12px; color:var(--ink); font-size:1.4rem;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation;
+  }
+  .dirpad button:active{transform:scale(.92); background:var(--accent); color:var(--accent-ink);}
+  .dirpad .center{background:transparent; font-size:1rem; color:var(--muted); font-weight:800;}
+  .scorebar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+  .score-chip{display:flex; align-items:center; gap:6px; background:var(--surface2); border-radius:999px; padding:5px 10px 5px 6px; font-size:.78rem; font-weight:700;}
+  .overlay{
+    position:fixed; inset:0; background:rgba(5,25,13,.92); backdrop-filter:blur(3px); z-index:40;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .overlay .box{max-width:360px; width:100%; text-align:center;}
+  .overlay .avatar{width:72px; height:72px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:1.8rem; font-weight:800; color:#06321a;}
+  .modal{position:fixed; inset:0; background:rgba(5,20,11,.75); z-index:50; display:flex; align-items:flex-end; justify-content:center;}
+  .modal .sheet{background:var(--surface); width:100%; max-width:560px; border-radius:20px 20px 0 0; padding:20px; max-height:85vh; overflow-y:auto;}
+  table{width:100%; border-collapse:collapse; font-size:.9rem;}
+  td,th{padding:7px 6px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08);}
+  th{color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.3px;}
+  .delta-good{color:var(--ok);} .delta-bad{color:var(--danger);} .delta-even{color:var(--muted);}
+  .rank1{font-weight:800;}
+  .legend{display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:.8rem; margin:8px 0;}
+  .legend .li{display:flex; align-items:center; gap:6px;}
+  .legend .sw{width:16px; height:16px; border-radius:4px; flex:0 0 auto;}
+  footer.credit{text-align:center; font-size:.72rem; color:var(--muted); opacity:.6; margin-top:18px;}
+  .install-hint{font-size:.78rem; color:var(--muted); margin-top:4px;}
+  .stepper{display:flex; align-items:center; gap:10px; justify-content:center;}
+  .stepper button{width:40px; height:40px; border-radius:50%; border:none; background:var(--surface2); color:var(--ink); font-size:1.3rem; cursor:pointer;}
+  .stepper .val{font-weight:800; font-size:1.1rem; min-width:70px; text-align:center;}
+  .seed-badge{display:inline-block; background:var(--surface2); border-radius:8px; padding:3px 8px; font-family:monospace; letter-spacing:1px; font-size:.85rem;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<template id="tpl-rules">
+  <h2>Hoe werkt het?</h2>
+  <p>Een digitale, vrij-naspeelbare versie van het rol-en-schrijf golfspel <strong>Paper Apps™ GOLF</strong> (Gladden Design). De spelregels hieronder zijn onze eigen uitwerking — er is geen officiële digitale versie, dus pas gerust aan als je het fysieke boekje erbij hebt.</p>
+  <h3>Per slag</h3>
+  <p>Je gooit een dobbelsteen (1-6) en kiest een richting (8 richtingen). De bal beweegt dat aantal vakjes in een rechte lijn.</p>
+  <div class="legend">
+    <div class="li"><span class="sw" style="background:var(--fairway)"></span>Fairway: bonusworp (2 dobbelstenen, hoogste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--rough)"></span>Rough: gewone worp</div>
+    <div class="li"><span class="sw" style="background:var(--sand)"></span>Zand: strafworp (2 dobbelstenen, laagste telt)</div>
+    <div class="li"><span class="sw" style="background:var(--water)"></span>Water: overvliegen mag, landen niet — kost 1 strafslag</div>
+    <div class="li"><span class="sw" style="background:var(--trees)"></span>Bomen: blokkeren je pad, bal stopt ervoor</div>
+    <div class="li"><span class="sw" style="background:var(--green)"></span>Green: putten — bal beweegt automatisch richting de vlag</div>
+  </div>
+  <p>Zodra je bal op de green ligt, hoef je geen richting meer te kiezen: de worp beweegt vanzelf richting de vlag. Haal je de vlag exact, dan is de hole uit.</p>
+  <h3>Samen spelen</h3>
+  <p>Iedereen speelt dezelfde baan, om de beurt, op hetzelfde toestel. Minste aantal slagen na alle holes wint. Je kunt dezelfde baan later opnieuw spelen met de baancode.</p>
+</template>
+
+<script>
+"use strict";
+/* ============================= utils ============================= */
+const $ = (sel, root=document) => root.querySelector(sel);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!=null) e.innerHTML = html; return e; };
+const clamp = (v,a,b) => Math.max(a, Math.min(b,v));
+const SEED_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function randomSeed(len=6){ let s=""; for(let i=0;i<len;i++) s+=SEED_CHARS[Math.floor(Math.random()*SEED_CHARS.length)]; return s; }
+function hashSeed(str){
+  let h = 1779033703 ^ str.length;
+  for (let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h<<13)|(h>>>19); }
+  return function(){
+    h = Math.imul(h ^ (h>>>16), 2246822519);
+    h = Math.imul(h ^ (h>>>13), 3266489917);
+    h ^= h>>>16;
+    return h>>>0;
+  };
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a>>>15), 1 | a);
+    t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t;
+    return ((t ^ (t>>>14)) >>> 0) / 4294967296;
+  };
+}
+function rngFor(baseSeed, holeIndex){ return mulberry32(hashSeed(baseSeed + "#" + holeIndex)()); }
+function rollD6(){ return 1 + Math.floor(Math.random()*6); }
+
+/* ============================= constants ============================= */
+const PLAYER_COLORS = ["#e63946","#2a9d8f","#f4a261","#8338ec","#ffbe0b","#3a86ff","#fb8500","#06d6a0"];
+const PARS_18 = [4,3,4,5,4,3,4,5,4, 4,3,5,4,4,3,4,5,4];
+const COLS = 7;
+const LENGTH_BY_PAR = {3:7, 4:11, 5:15};
+const DIRS = [
+  {key:"NW", dr:1, dc:-1, label:"↖", area:"nw"}, {key:"N", dr:1, dc:0, label:"↑", area:"n"}, {key:"NE", dr:1, dc:1, label:"↗", area:"ne"},
+  {key:"W", dr:0, dc:-1, label:"←", area:"w"},   {key:"C", dr:0, dc:0, label:"", area:"c", center:true}, {key:"E", dr:0, dc:1, label:"→", area:"e"},
+  {key:"SW", dr:-1, dc:-1, label:"↙", area:"sw"}, {key:"S", dr:-1, dc:0, label:"↓", area:"s"}, {key:"SE", dr:-1, dc:1, label:"↘", area:"se"}
+];
+const TERRAIN_NAME = {T:"Tee",F:"Fairway",R:"Rough",S:"Zand",W:"Water",X:"Bomen",G:"Green"};
+
+/* ============================= hole generation ============================= */
+function generateHole(baseSeed, holeIndex, par){
+  const rng = rngFor(baseSeed, holeIndex);
+  const rows = LENGTH_BY_PAR[par];
+  const grid = Array.from({length: rows}, () => Array(COLS).fill("R"));
+  const teeCol = 3;
+  let center = teeCol;
+  const corridor = [];
+  for (let r=0; r<rows; r++){
+    if (r>0 && r<rows-1){
+      const drift = Math.floor(rng()*3) - 1;
+      center = clamp(center + drift, 1, COLS-2);
+    }
+    const halfw = rng() < 0.55 ? 1 : 2;
+    corridor.push({center, halfw});
+    const lo = clamp(center-halfw, 0, COLS-1), hi = clamp(center+halfw, 0, COLS-1);
+    for (let c=lo; c<=hi; c++) grid[r][c] = "F";
+  }
+  grid[0][teeCol] = "T";
+
+  const greenRows = par===5 ? 3 : 2;
+  const pinRow = rows-1;
+  for (let r = rows-greenRows; r<rows; r++){
+    const c0 = corridor[r].center;
+    for (let c = clamp(c0-2,0,COLS-1); c <= clamp(c0+2,0,COLS-1); c++){
+      if (Math.abs(c-c0) + (rows-1-r) <= 2) grid[r][c] = "G";
+    }
+  }
+  const pinCol = corridor[pinRow].center;
+  grid[pinRow][pinCol] = "G";
+  const pin = {r: pinRow, c: pinCol};
+
+  if (par !== 3 || rng() < 0.4){
+    const wr = clamp(Math.floor(rows*0.38) + Math.floor(rng()*2), 2, rows-greenRows-2);
+    const span = (par===5 && rng()<0.5) ? 2 : 1;
+    for (let k=0; k<span; k++){
+      const r = wr+k;
+      if (r>0 && r < rows-greenRows-1) for (let c=0;c<COLS;c++) grid[r][c] = "W";
+    }
+  }
+
+  const bunkerCount = par===3 ? 1 : (par===4 ? 2 : 3);
+  for (let i=0; i<bunkerCount; i++){
+    const r = 1 + Math.floor(rng()*(rows-2));
+    const c = Math.floor(rng()*COLS);
+    if (grid[r][c]==="F" || grid[r][c]==="R"){
+      grid[r][c] = "S";
+      if (rng() < 0.5){
+        const c2 = clamp(c + (rng()<0.5?-1:1), 0, COLS-1);
+        if (grid[r][c2]==="F" || grid[r][c2]==="R") grid[r][c2] = "S";
+      }
+    }
+  }
+
+  const treeClusters = par===3 ? 2 : (par===4 ? 3 : 4);
+  for (let i=0; i<treeClusters; i++){
+    const r = 1 + Math.floor(rng()*(rows-2));
+    const c = Math.floor(rng()*COLS);
+    if (grid[r][c]==="R"){
+      grid[r][c] = "X";
+      if (rng() < 0.6){
+        const r2 = clamp(r + (rng()<0.5?0:1), 0, rows-1);
+        const c2 = clamp(c + (rng()<0.5?-1:1), 0, COLS-1);
+        if (grid[r2][c2]==="R") grid[r2][c2] = "X";
+      }
+    }
+  }
+  return {rows, cols:COLS, grid, pin, teeCol, par};
+}
+
+/* ============================= shot resolution ============================= */
+function terrainMod(t){ if (t==="F"||t==="T") return "adv"; if (t==="S"||t==="X") return "dis"; return "normal"; }
+function rollForTerrain(t){
+  const mod = terrainMod(t);
+  const d1 = rollD6();
+  if (mod==="normal") return {value:d1, dice:[d1], mod};
+  const d2 = rollD6();
+  const value = mod==="adv" ? Math.max(d1,d2) : Math.min(d1,d2);
+  return {value, dice:[d1,d2], mod};
+}
+function computePath(start, dr, dc, roll, hole){
+  const path = [];
+  for (let step=1; step<=roll; step++){
+    const nr = start.r + dr*step, nc = start.c + dc*step;
+    if (nr<0 || nr>=hole.rows || nc<0 || nc>=hole.cols) break;
+    const terrain = hole.grid[nr][nc];
+    if (terrain === "X") break;
+    path.push({r:nr, c:nc, terrain});
+  }
+  return path;
+}
+function resolveShot(pos, dr, dc, roll, hole){
+  const path = computePath(pos, dr, dc, roll, hole);
+  let landing = path.length ? path[path.length-1] : {...pos, terrain: hole.grid[pos.r][pos.c]};
+  let penalty = false;
+  if (landing.terrain === "W"){
+    penalty = true;
+    let dry = null;
+    for (let i=path.length-2; i>=0; i--){ if (path[i].terrain !== "W"){ dry = path[i]; break; } }
+    landing = dry || {...pos, terrain: hole.grid[pos.r][pos.c]};
+  }
+  return {landing, penalty, path};
+}
+function resolvePutt(pos, roll, pin){
+  let p = {...pos};
+  for (let i=0; i<roll; i++){
+    if (p.r===pin.r && p.c===pin.c) break;
+    const dr = Math.sign(pin.r - p.r), dc = Math.sign(pin.c - p.c);
+    p = {r:p.r+dr, c:p.c+dc};
+  }
+  return p;
+}
+
+/* ============================= persistence ============================= */
+const SAVE_KEY = "papiergolf_v1";
+function saveState(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(G)); }catch(e){} }
+function loadState(){ try{ const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
+function clearState(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+
+/* ============================= game state ============================= */
+let G = null; // active game, or null = on start screen
+let setupPlayers = [{name:"", color: PLAYER_COLORS[0]}, {name:"", color: PLAYER_COLORS[1]}];
+let setupLength = 9;
+let setupSeed = "";
+let scoreboardOpen = false;
+
+function newGame(players, roundLength, baseSeed){
+  const pars = PARS_18.slice(0, roundLength);
+  const holeIndex = 0;
+  const hole = generateHole(baseSeed, holeIndex, pars[holeIndex]);
+  const gamePlayers = players.map((p,i)=>({
+    name: p.name || ("Speler " + (i+1)),
+    color: p.color,
+    pos: {r:0, c: hole.teeCol},
+    finished: false,
+    strokesThisHole: 0,
+    strokes: Array(roundLength).fill(null),
+    total: 0
+  }));
+  return {
+    baseSeed, roundLength, pars, holeIndex, hole,
+    players: gamePlayers,
+    turn: 0,
+    phase: "pass", // pass | rolling | direction | holeSummary | roundEnd
+    pendingRoll: null,
+    log: [],
+    startOffset: 0
+  };
+}
+
+function currentPlayer(){ return G.players[G.turn]; }
+
+function pushLog(msg, cls){ G.log.push({msg, cls: cls||""}); if (G.log.length>40) G.log.shift(); }
+
+function advanceTurn(){
+  const n = G.players.length;
+  let i = G.turn;
+  for (let k=0; k<n; k++){
+    i = (i+1) % n;
+    if (!G.players[i].finished){ G.turn = i; G.phase = "pass"; G.pendingRoll = null; return; }
+  }
+  // everyone finished -> hole complete
+  G.phase = "holeSummary";
+}
+
+function startHole(index){
+  G.holeIndex = index;
+  G.hole = generateHole(G.baseSeed, index, G.pars[index]);
+  G.players.forEach(p => { p.pos = {r:0, c:G.hole.teeCol}; p.finished = false; p.strokesThisHole = 0; });
+  G.startOffset = index % G.players.length;
+  G.turn = (G.startOffset - 1 + G.players.length) % G.players.length; // so advanceTurn lands correctly
+  advanceTurn();
+}
+
+function doRoll(){
+  const p = currentPlayer();
+  const terrain = G.hole.grid[p.pos.r][p.pos.c];
+  if (terrain === "G"){
+    const roll = rollForTerrain("R"); // putting: plain single d6, no bonus/malus
+    const dest = resolvePutt(p.pos, roll.value, G.hole.pin);
+    p.pos = dest;
+    p.strokesThisHole += 1;
+    const holedOut = dest.r===G.hole.pin.r && dest.c===G.hole.pin.c;
+    if (holedOut){
+      p.finished = true;
+      p.strokes[G.holeIndex] = p.strokesThisHole;
+      p.total += p.strokesThisHole;
+      pushLog(`⛳ ${p.name} putt een ${roll.value} en holt uit in ${p.strokesThisHole} slagen!`, "holed");
+    } else {
+      pushLog(`${p.name} putt een ${roll.value}, nog niet in de hole.`, "");
+    }
+    advanceTurn();
+    saveState();
+    render();
+    return;
+  }
+  const roll = rollForTerrain(terrain);
+  G.pendingRoll = roll;
+  G.phase = "direction";
+  saveState();
+  render();
+}
+
+function doDirection(dir){
+  const p = currentPlayer();
+  const roll = G.pendingRoll;
+  const result = resolveShot(p.pos, dir.dr, dir.dc, roll.value, G.hole);
+  p.pos = {r: result.landing.r, c: result.landing.c};
+  p.strokesThisHole += 1 + (result.penalty ? 1 : 0);
+  const fromTerrain = terrainMod(G.hole.grid[result.landing.r]?.[result.landing.c] ?? "R");
+  let msg = `${p.name} slaat een ${roll.value} ${dirWord(dir.key)}`;
+  if (roll.mod==="adv") msg += ` (fairway-bonus: ${roll.dice.join(" en ")})`;
+  if (roll.mod==="dis") msg += ` (strafworp: ${roll.dice.join(" en ")})`;
+  const holedOut = result.landing.r===G.hole.pin.r && result.landing.c===G.hole.pin.c;
+  if (result.penalty){
+    msg += " → in het water! +1 strafslag.";
+    pushLog(msg, "penalty");
+  } else if (holedOut){
+    p.finished = true;
+    p.strokes[G.holeIndex] = p.strokesThisHole;
+    p.total += p.strokesThisHole;
+    msg += ` → in de hole! ${p.strokesThisHole} slagen.`;
+    pushLog(msg, "holed");
+  } else {
+    const land = G.hole.grid[result.landing.r][result.landing.c];
+    msg += ` → ligt nu in de ${TERRAIN_NAME[land] || land}.`;
+    pushLog(msg, "");
+  }
+  G.pendingRoll = null;
+  advanceTurn();
+  saveState();
+  render();
+}
+function dirWord(key){
+  const map = {N:"naar voren", S:"naar achteren", E:"naar rechts", W:"naar links", NE:"rechtsvoor", NW:"linksvoor", SE:"rechtsachter", SW:"linksachter"};
+  return map[key] || "";
+}
+
+function allFinishedHole(){ return G.players.every(p=>p.finished); }
+
+function goNextHole(){
+  if (G.holeIndex + 1 >= G.roundLength){ G.phase = "roundEnd"; saveState(); render(); return; }
+  startHole(G.holeIndex + 1);
+  saveState();
+  render();
+}
+
+function roundTotal(p, upTo){
+  let s = 0; for (let i=0;i<=upTo;i++) if (p.strokes[i]!=null) s += p.strokes[i]; return s;
+}
+function parTotal(upTo){ let s=0; for (let i=0;i<=upTo;i++) s += G.pars[i]; return s; }
+
+/* ============================= rendering ============================= */
+function render(){
+  const app = $("#app");
+  app.innerHTML = "";
+  if (!G){ app.appendChild(renderStart()); return; }
+  app.appendChild(renderGame());
+}
+
+function colorAvatar(color, letter){
+  const d = el("div"); d.style.cssText = `width:40px;height:40px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-weight:800;color:#06240f;flex:0 0 auto;`;
+  d.textContent = letter; return d;
+}
+
+/* ---- start screen ---- */
+function renderStart(){
+  const wrap = el("div");
+  wrap.appendChild(el("h1", "", "⛳ Papiergolf"));
+  wrap.appendChild(el("p", "", "Digitale, pass-and-play versie van het rol-en-schrijf golfspel. Gooi de dobbelsteen, kies een richting, en haal de vlag in zo min mogelijk slagen — samen met wie er ook maar meespeelt op dit toestel."));
+
+  const card = el("div", "card");
+  card.appendChild(el("h3", "", "Spelers"));
+  const playersBox = el("div", "", "");
+  card.appendChild(playersBox);
+  const addBtn = el("button", "btn btn-ghost btn-sm", "+ Speler toevoegen");
+  addBtn.style.marginTop="4px";
+  addBtn.onclick = () => { if (setupPlayers.length<8){ setupPlayers.push({name:"", color: PLAYER_COLORS[setupPlayers.length % PLAYER_COLORS.length]}); render(); } };
+  card.appendChild(addBtn);
+
+  function renderPlayers(){
+    playersBox.innerHTML = "";
+    setupPlayers.forEach((p, i) => {
+      const row = el("div", "player-row");
+      row.appendChild(el("div","player-dot")).style.background = p.color;
+      const inp = el("input"); inp.type="text"; inp.placeholder = `Naam speler ${i+1}`; inp.value = p.name; inp.maxLength=18;
+      inp.oninput = e => { setupPlayers[i].name = e.target.value; };
+      row.appendChild(inp);
+      if (setupPlayers.length>1){
+        const rm = el("button","iconbtn","✕");
+        rm.onclick = () => { setupPlayers.splice(i,1); render(); };
+        row.appendChild(rm);
+      }
+      playersBox.appendChild(row);
+    });
+  }
+  renderPlayers();
+  wrap.appendChild(card);
+
+  const card2 = el("div","card");
+  card2.appendChild(el("h3","","Ronde"));
+  const lenRow = el("div","row");
+  [9,18].forEach(n=>{
+    const b = el("button", "btn " + (setupLength===n ? "btn-primary" : "btn-ghost"), n + " holes");
+    b.onclick = () => { setupLength = n; render(); };
+    lenRow.appendChild(b);
+  });
+  card2.appendChild(lenRow);
+
+  card2.appendChild(el("label","","Baancode (optioneel — zelfde code = zelfde baan)"));
+  const seedRow = el("div","row");
+  const seedInp = el("input"); seedInp.type="text"; seedInp.placeholder="bv. A7K2QX, leeg = willekeurig"; seedInp.value = setupSeed; seedInp.maxLength=10;
+  seedInp.oninput = e => setupSeed = e.target.value.toUpperCase();
+  seedInp.style.textTransform="uppercase";
+  seedRow.appendChild(seedInp);
+  card2.appendChild(seedRow);
+  wrap.appendChild(card2);
+
+  const startBtn = el("button","btn btn-primary","Start spel ⛳");
+  startBtn.style.fontSize="1.05rem"; startBtn.style.padding="16px";
+  startBtn.onclick = () => {
+    const players = setupPlayers.filter(p=>true);
+    const seed = (setupSeed && setupSeed.trim()) ? setupSeed.trim().toUpperCase() : randomSeed();
+    G = newGame(players, setupLength, seed);
+    saveState();
+    render();
+  };
+  wrap.appendChild(startBtn);
+
+  const rulesBtn = el("button","btn btn-ghost","Hoe werkt het?");
+  rulesBtn.style.marginTop="10px";
+  rulesBtn.onclick = () => openRulesModal();
+  wrap.appendChild(rulesBtn);
+
+  wrap.appendChild(el("footer","credit","Geïnspireerd op Paper Apps™ GOLF van Gladden Design. Eigen digitale uitwerking, geen officiële app."));
+  return wrap;
+}
+
+/* ---- game screen ---- */
+function renderGame(){
+  const wrap = el("div");
+
+  const top = el("div","topbar");
+  top.appendChild(el("div","title","⛳ Papiergolf"));
+  const ctr = el("div","controls");
+  const scoreBtn = el("button","pillbtn","📊");
+  scoreBtn.onclick = () => { scoreboardOpen = !scoreboardOpen; render(); };
+  const helpBtn = el("button","pillbtn","?");
+  helpBtn.onclick = () => openRulesModal();
+  const newBtn = el("button","pillbtn","⟲");
+  newBtn.onclick = () => { if (confirm("Huidig spel stoppen en terug naar start?")){ G=null; clearState(); render(); } };
+  ctr.appendChild(scoreBtn); ctr.appendChild(helpBtn); ctr.appendChild(newBtn);
+  top.appendChild(ctr);
+  wrap.appendChild(top);
+
+  const info = el("div","hole-info");
+  const parLabel = {3:"Par 3",4:"Par 4",5:"Par 5"}[G.hole.par];
+  info.appendChild(el("div","big", `Hole ${G.holeIndex+1} van ${G.roundLength} · ${parLabel}`));
+  info.appendChild(el("div","code", `Baan: <span class="seed-badge">${G.baseSeed}</span>`));
+  wrap.appendChild(info);
+
+  if (scoreboardOpen) wrap.appendChild(renderScoreboard());
+
+  if (G.phase === "roundEnd"){ wrap.appendChild(renderRoundEnd()); return wrap; }
+  if (G.phase === "holeSummary"){ wrap.appendChild(renderHoleSummary()); return wrap; }
+
+  const p = currentPlayer();
+  const banner = el("div","turn-banner");
+  banner.style.background = p.color + "33";
+  banner.style.border = "1px solid " + p.color;
+  banner.appendChild(colorAvatar(p.color, p.name[0]?.toUpperCase() || "?"));
+  const bt = el("div","");
+  bt.appendChild(el("div","", `${p.name} is aan de beurt`));
+  bt.appendChild(el("div","", `<span style="font-weight:400;color:var(--muted);font-size:.82rem">Slagen deze hole: ${p.strokesThisHole}</span>`));
+  banner.appendChild(bt);
+  wrap.appendChild(banner);
+
+  wrap.appendChild(el("div","board-wrap")).appendChild(renderBoard());
+
+  if (G.phase === "direction"){
+    const dd = el("div","dice-display");
+    const roll = G.pendingRoll;
+    if (roll.dice.length===1){
+      dd.appendChild(mkDie(roll.dice[0], true));
+    } else {
+      roll.dice.forEach(d => dd.appendChild(mkDie(d, d===roll.value && !(roll.mod==="adv" && roll.dice[0]===roll.dice[1] && false))));
+      const note = el("div","", roll.mod==="adv" ? "fairway-bonus: hoogste telt" : "strafworp: laagste telt");
+      note.style.fontSize = ".72rem"; note.style.alignSelf="center";
+      dd.appendChild(note);
+    }
+    wrap.appendChild(dd);
+
+    const pad = el("div","dirpad");
+    pad.style.gridTemplateAreas = `"nw n ne" "w c e" "sw s se"`;
+    DIRS.forEach(d => {
+      const btn = el("button", d.center ? "center" : "", d.center ? String(roll.value) : d.label);
+      btn.style.gridArea = d.area;
+      if (!d.center) btn.onclick = () => doDirection(d);
+      pad.appendChild(btn);
+    });
+    wrap.appendChild(pad);
+    wrap.appendChild(el("p","","Kies een richting om te slaan."));
+  } else {
+    const onGreen = G.hole.grid[p.pos.r][p.pos.c] === "G";
+    const btn = el("button","btn btn-primary", onGreen ? "⛳ Putt!" : "🎲 Gooi");
+    btn.style.fontSize="1.1rem"; btn.style.padding="16px";
+    btn.onclick = doRoll;
+    wrap.appendChild(btn);
+  }
+
+  const log = el("div","log");
+  G.log.slice(-8).forEach(l => { const e = el("div","entry " + l.cls, l.msg); log.appendChild(e); });
+  wrap.appendChild(el("div","card").appendChild(log).parentNode);
+
+  if (G.phase === "pass") wrap.appendChild(renderPassOverlay(p));
+
+  return wrap;
+}
+
+function mkDie(val, used){ const d = el("div","die" + (used?" used":""), String(val)); return d; }
+
+function renderPassOverlay(p){
+  const ov = el("div","overlay");
+  const box = el("div","box");
+  const av = colorAvatar(p.color, p.name[0]?.toUpperCase() || "?");
+  av.style.width="72px"; av.style.height="72px"; av.style.margin="0 auto 16px"; av.style.fontSize="1.8rem";
+  av.className = "avatar"; av.style.background = p.color;
+  box.appendChild(av);
+  box.appendChild(el("h2","", `Geef door aan ${p.name}`));
+  box.appendChild(el("p","", "Volgende beurt — geef het toestel door."));
+  const btn = el("button","btn btn-primary","Ik ben klaar");
+  btn.style.marginTop="18px"; btn.style.fontSize="1.05rem"; btn.style.padding="16px";
+  btn.onclick = () => { G.phase = "rolling"; saveState(); render(); };
+  box.appendChild(btn);
+  ov.appendChild(box);
+  return ov;
+}
+
+function renderScoreboard(){
+  const card = el("div","card");
+  card.appendChild(el("h3","","Stand"));
+  const tbl = el("table");
+  const head = el("tr");
+  head.appendChild(el("th","","Speler"));
+  for (let i=0;i<=G.holeIndex;i++) head.appendChild(el("th","",String(i+1)));
+  head.appendChild(el("th","","Tot."));
+  tbl.appendChild(head);
+  const ranked = [...G.players].sort((a,b)=> (roundTotal(a,G.holeIndex)+ (a.finished?0: (a.strokesThisHole-0))) - (roundTotal(b,G.holeIndex)+(b.finished?0:(b.strokesThisHole-0))));
+  G.players.forEach(p => {
+    const tr = el("tr");
+    const nameTd = el("td","", "");
+    const dot = el("span",""); dot.style.cssText=`display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px;`;
+    nameTd.appendChild(dot); nameTd.appendChild(document.createTextNode(p.name));
+    tr.appendChild(nameTd);
+    for (let i=0;i<=G.holeIndex;i++){
+      const v = p.strokes[i];
+      const cell = el("td","", v==null ? (i===G.holeIndex && !p.finished ? String(p.strokesThisHole)+"…" : "–") : String(v));
+      tr.appendChild(cell);
+    }
+    const tot = roundTotal(p, G.holeIndex) + (!p.finished ? p.strokesThisHole : 0);
+    tr.appendChild(el("td","", String(tot)));
+    tbl.appendChild(tr);
+  });
+  card.appendChild(tbl);
+  return card;
+}
+
+function renderHoleSummary(){
+  const box = el("div","card");
+  box.appendChild(el("h2","", `Hole ${G.holeIndex+1} klaar`));
+  const tbl = el("table");
+  const head = el("tr"); ["Speler","Slagen","T.o.v. par"].forEach(h=>head.appendChild(el("th","",h))); tbl.appendChild(head);
+  const par = G.pars[G.holeIndex];
+  const sorted = [...G.players].sort((a,b)=> a.strokesThisHole - b.strokesThisHole);
+  sorted.forEach((p,i)=>{
+    const tr = el("tr", i===0 ? "rank1" : "");
+    const nameTd = el("td","",""); const dot = el("span",""); dot.style.cssText=`display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px;`;
+    nameTd.appendChild(dot); nameTd.appendChild(document.createTextNode(p.name)); tr.appendChild(nameTd);
+    tr.appendChild(el("td","", String(p.strokesThisHole)));
+    const delta = p.strokesThisHole - par;
+    const dtxt = delta===0 ? "E" : (delta>0 ? "+"+delta : String(delta));
+    const dcls = delta<0 ? "delta-good" : (delta>0 ? "delta-bad" : "delta-even");
+    tr.appendChild(el("td",dcls,dtxt));
+    tbl.appendChild(tr);
+  });
+  box.appendChild(tbl);
+  const btn = el("button","btn btn-primary", G.holeIndex+1 >= G.roundLength ? "Bekijk eindstand 🏆" : "Volgende hole →");
+  btn.style.marginTop="14px"; btn.style.fontSize="1.05rem"; btn.style.padding="16px";
+  btn.onclick = goNextHole;
+  box.appendChild(btn);
+  return box;
+}
+
+function renderRoundEnd(){
+  const box = el("div","card");
+  box.appendChild(el("h2","","🏆 Eindstand"));
+  const par = parTotal(G.roundLength-1);
+  const sorted = [...G.players].sort((a,b)=> roundTotal(a,G.roundLength-1) - roundTotal(b,G.roundLength-1));
+  const tbl = el("table");
+  const head = el("tr"); ["#","Speler","Slagen","T.o.v. par"].forEach(h=>head.appendChild(el("th","",h))); tbl.appendChild(head);
+  sorted.forEach((p,i)=>{
+    const total = roundTotal(p, G.roundLength-1);
+    const tr = el("tr", i===0 ? "rank1" : "");
+    tr.appendChild(el("td","", String(i+1)));
+    const nameTd = el("td","",""); const dot=el("span",""); dot.style.cssText=`display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px;`;
+    nameTd.appendChild(dot); nameTd.appendChild(document.createTextNode(p.name)); tr.appendChild(nameTd);
+    tr.appendChild(el("td","", String(total)));
+    const delta = total - par;
+    const dtxt = delta===0 ? "E" : (delta>0?"+"+delta:String(delta));
+    tr.appendChild(el("td", delta<0?"delta-good":(delta>0?"delta-bad":"delta-even"), dtxt));
+    tbl.appendChild(tr);
+  });
+  box.appendChild(tbl);
+  box.appendChild(el("p","", `Baancode: <span class="seed-badge">${G.baseSeed}</span> — vul deze code in bij een nieuw spel om exact dezelfde baan nog eens te spelen.`));
+  const row = el("div","row"); row.style.marginTop="12px";
+  const again = el("button","btn btn-primary","Nieuwe ronde, zelfde spelers");
+  again.onclick = () => {
+    const players = G.players.map(p=>({name:p.name, color:p.color}));
+    const seed = randomSeed();
+    G = newGame(players, G.roundLength, seed);
+    saveState(); render();
+  };
+  const toStart = el("button","btn btn-ghost","Terug naar start");
+  toStart.onclick = () => { G=null; clearState(); setupPlayers=[{name:"",color:PLAYER_COLORS[0]},{name:"",color:PLAYER_COLORS[1]}]; render(); };
+  row.appendChild(again); row.appendChild(toStart);
+  box.appendChild(row);
+  return box;
+}
+
+/* ---- board SVG ---- */
+const TERRAIN_COLOR = {T:"#9ad17f",F:"#7fb86a",R:"#3f6b3a",S:"#e3c878",W:"#4a90d9",X:"#24401f",G:"#a7e8a0"};
+function renderBoard(){
+  const hole = G.hole;
+  const cell = 44, pad = 6;
+  const w = COLS*cell + pad*2;
+  const h = hole.rows*cell + pad*2;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("class","board");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.style.background = "#2c5a1f";
+
+  for (let r=0; r<hole.rows; r++){
+    for (let c=0; c<COLS; c++){
+      const terrain = hole.grid[r][c];
+      const y = h - pad - (r+1)*cell; // row 0 (tee) at bottom
+      const x = pad + c*cell;
+      const rect = document.createElementNS(svg.namespaceURI,"rect");
+      rect.setAttribute("x", x); rect.setAttribute("y", y);
+      rect.setAttribute("width", cell-2); rect.setAttribute("height", cell-2);
+      rect.setAttribute("rx", 6);
+      rect.setAttribute("fill", TERRAIN_COLOR[terrain] || "#3f6b3a");
+      svg.appendChild(rect);
+      if (terrain === "X"){
+        const tx = document.createElementNS(svg.namespaceURI,"text");
+        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+6); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","20");
+        tx.textContent = "🌲"; svg.appendChild(tx);
+      }
+      if (terrain === "T"){
+        const tx = document.createElementNS(svg.namespaceURI,"text");
+        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+6); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","16");
+        tx.textContent = "⛳"; svg.appendChild(tx);
+      }
+      if (r===hole.pin.r && c===hole.pin.c){
+        const tx = document.createElementNS(svg.namespaceURI,"text");
+        tx.setAttribute("x", x+cell/2-1); tx.setAttribute("y", y+cell/2+7); tx.setAttribute("text-anchor","middle"); tx.setAttribute("font-size","20");
+        tx.textContent = "🚩"; svg.appendChild(tx);
+      }
+    }
+  }
+
+  // balls, offset if sharing a cell
+  const byCell = {};
+  G.players.forEach(p => { const k = p.pos.r+","+p.pos.c; (byCell[k] = byCell[k]||[]).push(p); });
+  Object.values(byCell).forEach(group => {
+    group.forEach((p, idx) => {
+      const r = p.pos.r, c = p.pos.c;
+      const y = h - pad - (r+1)*cell + cell/2;
+      const x = pad + c*cell + cell/2;
+      const n = group.length;
+      const offX = n>1 ? (idx - (n-1)/2) * 10 : 0;
+      const circle = document.createElementNS(svg.namespaceURI,"circle");
+      circle.setAttribute("cx", x+offX); circle.setAttribute("cy", y);
+      circle.setAttribute("r", 7.5);
+      circle.setAttribute("fill", p.color);
+      circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "1.5");
+      svg.appendChild(circle);
+    });
+  });
+
+  return svg;
+}
+
+/* ---- rules modal ---- */
+function openRulesModal(){
+  const modal = el("div","modal");
+  const sheet = el("div","sheet");
+  sheet.innerHTML = $("#tpl-rules").innerHTML;
+  const close = el("button","btn btn-ghost","Sluiten");
+  close.style.marginTop="14px";
+  close.onclick = () => modal.remove();
+  sheet.appendChild(close);
+  modal.appendChild(sheet);
+  modal.onclick = (e) => { if (e.target===modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+/* ============================= init ============================= */
+(function init(){
+  const saved = loadState();
+  if (saved) G = saved;
+  render();
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+  }
+})();
+</script>
+</body>
+</html>
