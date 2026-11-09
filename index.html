@@ -199,6 +199,13 @@ function animateDiceRoll(btn, diceValues, onDone){
 
 /* ============================= constants ============================= */
 const PLAYER_COLORS = ["#e63946","#2a9d8f","#f4a261","#8338ec","#ffbe0b","#3a86ff","#fb8500","#06d6a0"];
+// De bal zelf is altijd wit met een gekleurd randje; bij precies 2 spelers is dat randje
+// rood/blauw (duidelijker te onderscheiden dan het standaard rood/groen uit PLAYER_COLORS).
+// Voor andere aantallen spelers blijft de normale kleurenreeks gewoon gelden.
+function finalPlayerColor(i, total){
+  if (total === 2) return i===0 ? "#e63946" : "#3a86ff";
+  return PLAYER_COLORS[i % PLAYER_COLORS.length];
+}
 const PARS_18 = [4,3,4,5,4,3,4,5,4, 4,3,5,4,4,3,4,5,4];
 const COLS = 7;
 const LENGTH_BY_PAR = {3: 3*6, 4: 4*6, 5: 5*6}; // par x 6 vakjes lengte
@@ -466,7 +473,7 @@ function newGame(players, roundLength, baseSeed, online){
   const hole = generateHole(baseSeed, holeIndex, pars[holeIndex]);
   const gamePlayers = players.map((p,i)=>({
     name: p.name || ("Speler " + (i+1)),
-    color: p.color,
+    color: finalPlayerColor(i, players.length),
     pos: {r:0, c: hole.teeCol},
     finished: false,
     strokesThisHole: 0,
@@ -492,6 +499,8 @@ function currentPlayer(){ return G.players[G.turn]; }
 
 function advanceTurn(){
   const n = G.players.length;
+  const justMoved = G.players[G.turn];
+  if (justMoved){ delete justMoved.shotStart; delete justMoved.shotMid; }
   let i = G.turn;
   for (let k=0; k<n; k++){
     i = (i+1) % n;
@@ -511,7 +520,7 @@ function advanceTurn(){
 function startHole(index){
   G.holeIndex = index;
   G.hole = generateHole(G.baseSeed, index, G.pars[index]);
-  G.players.forEach(p => { p.pos = {r:0, c:G.hole.teeCol}; p.finished = false; p.strokesThisHole = 0; });
+  G.players.forEach(p => { p.pos = {r:0, c:G.hole.teeCol}; p.finished = false; p.strokesThisHole = 0; delete p.shotStart; delete p.shotMid; });
   G.startOffset = index % G.players.length;
   G.turn = (G.startOffset - 1 + G.players.length) % G.players.length; // so advanceTurn lands correctly
   advanceTurn();
@@ -530,7 +539,9 @@ function doRollForward(btn){
 
   animateDiceRoll(btn, lenRoll.dice, () => {
     const pp = currentPlayer();
+    pp.shotStart = {r: pp.pos.r, c: pp.pos.c}; // voor het bewegingslijntje op het bord
     pp.pos = {r: result.landing.r, c: result.landing.c};
+    pp.shotMid = {r: pp.pos.r, c: pp.pos.c};
     if (holedOut){
       finishShot({ lenRoll, widRoll:null, dir:0, forwardPenalty: result.penalty, forwardHazard: result.hazard, lateralPenalty:0, lateralHazard:null, holedOut:true });
       return;
@@ -1159,7 +1170,28 @@ function renderBoard(){
     svg.appendChild(ring);
   }
 
-  // ballen, verspringend als meerdere spelers hetzelfde vakje delen
+  // bewegingslijn: laat zien hoe ver de bal deze beurt is gegaan (recht vooruit, en na de
+  // breedtekeuze ook opzij) — alleen voor de speler die nu aan de beurt is, zolang die
+  // beurt nog loopt (niet meer zichtbaar zodra de volgende beurt begint).
+  if (["rolling-width","choose-side","result"].includes(G.phase)){
+    const p = currentPlayer();
+    if (p.shotStart){
+      const segs = [[p.shotStart, p.shotMid || p.pos]];
+      if (p.shotMid && (p.shotMid.r!==p.pos.r || p.shotMid.c!==p.pos.c)) segs.push([p.shotMid, p.pos]);
+      segs.forEach(([from,to]) => {
+        const a = center(from.r, from.c), b = center(to.r, to.c);
+        const line = mk("line");
+        line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+        line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+        line.setAttribute("stroke", p.color); line.setAttribute("stroke-width","3");
+        line.setAttribute("stroke-linecap","round"); line.setAttribute("opacity","0.85");
+        svg.appendChild(line);
+      });
+    }
+  }
+
+  // ballen, verspringend als meerdere spelers hetzelfde vakje delen — wit met een gekleurd
+  // randje in de kleur van de speler, zodat de bal zelf altijd herkenbaar "bal" blijft.
   const byCell = {};
   G.players.forEach(p => { const k = p.pos.r+","+p.pos.c; (byCell[k] = byCell[k]||[]).push(p); });
   Object.values(byCell).forEach(group => {
@@ -1169,9 +1201,9 @@ function renderBoard(){
       const offX = n>1 ? (idx - (n-1)/2) * 11 : 0;
       const circle = mk("circle");
       circle.setAttribute("cx", x+offX); circle.setAttribute("cy", y);
-      circle.setAttribute("r", 7.5);
-      circle.setAttribute("fill", p.color);
-      circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "1.8");
+      circle.setAttribute("r", 8);
+      circle.setAttribute("fill", "#ffffff");
+      circle.setAttribute("stroke", p.color); circle.setAttribute("stroke-width", "3.2");
       svg.appendChild(circle);
     });
   });
