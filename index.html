@@ -617,6 +617,28 @@ function render(){
   app.innerHTML = "";
   if (!G){ app.appendChild(renderStart()); return; }
   app.appendChild(renderGame());
+  scrollBallIntoView();
+}
+
+// Laat het scherm meebewegen met de bal die nu aan zet is, zodat je 'm nooit handmatig
+// hoeft op te zoeken op een lange baan. Houdt rekening met de vaste onderbalk (dobbelsteen-
+// knoppen) die anders een stuk van het bord zou bedekken; scrolt alleen als de bal niet al
+// comfortabel in beeld staat, zodat kleine zetten niet onnodig laten "schokken".
+function scrollBallIntoView(){
+  requestAnimationFrame(() => {
+    const ball = document.querySelector("svg.board circle[data-current]");
+    if (!ball) return;
+    const rect = ball.getBoundingClientRect();
+    const barEl = document.querySelector(".action-bar-inner");
+    const barHeight = barEl ? barEl.getBoundingClientRect().height : 0;
+    const visibleTop = 64;
+    const visibleBottom = window.innerHeight - barHeight - 16;
+    if (visibleBottom <= visibleTop) return;
+    if (rect.top >= visibleTop && rect.bottom <= visibleBottom) return;
+    const targetCenter = visibleTop + (visibleBottom - visibleTop) * 0.4;
+    const delta = (rect.top + rect.height/2) - targetCenter;
+    window.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+  });
 }
 
 function colorAvatar(color, letter){
@@ -1204,6 +1226,7 @@ function renderBoard(){
       circle.setAttribute("r", 8);
       circle.setAttribute("fill", "#ffffff");
       circle.setAttribute("stroke", p.color); circle.setAttribute("stroke-width", "3.2");
+      if (G.players[G.turn] === p) circle.setAttribute("data-current","1"); // voor auto-scroll
       svg.appendChild(circle);
     });
   });
